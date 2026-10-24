@@ -6,18 +6,20 @@ LangGraph 统一任务实测脚本
 模型    : DeepSeek (deepseek-v4-pro)
 统一任务: 联网检索资料 → 提取关键信息 → 事实交叉核验 → 生成 500 字以内
           带来源链接的 Markdown 技术简报
-统一工具: 联网搜索(Bing) + 网页内容读取 + 计算器
+统一工具: 联网搜索 + 网页读取（均走千问 MCP，失败自动降级本地实现） + 计算器
 ================================================================
 用法    : python agent_brief.py [主题]
 示例    : python agent_brief.py 大模型上下文工程
 """
 
 import ast
+import asyncio
 import json
 import logging
 import os
 import re
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -76,6 +78,8 @@ STATS = {
     "llm_calls": 0,
     "node_timings": {},
     "tool_calls": {},
+    "search_backend": {"qwen_mcp": 0, "bing_fallback": 0},
+    "fetch_backend": {"qwen_mcp": 0, "local_fallback": 0},
     "errors": [],
 }
 
@@ -95,37 +99,141 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 
+# 联网工具后端：千问 MCP（主） → 本地实现（降级兜底）
+#   EnhancedSearch/mcp 提供 search_pro（联网搜索增强版）
+#   WebFetch/mcp       提供 web_fetch（标准化 Markdown 正文抽取）
+QWEN_MCP_BASE = "https://maas.qianwenaiapi.com/api/v1/mcps"
+_qwen_tools: dict = {}
+_qwen_lock = threading.Lock()
+
+
+async def _load_qwen_tools() -> dict:
+    """经 langchain-mcp-adapters 接入千问 MCP 服务（Streamable HTTP）。"""
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+
+    key = os.environ.get("DASHSCOPE_API_KEY", "")
+    if not key:
+        raise RuntimeError("未配置 DASHSCOPE_API_KEY")
+    auth = {"Authorization": f"Bearer {key}"}
+    client = MultiServerMCPClient({
+        "qwen-search": {"transport": "streamable_http",
+                        "url": f"{QWEN_MCP_BASE}/EnhancedSearch/mcp",
+                        "headers": auth},
+        "qwen-fetch": {"transport": "streamable_http",
+                       "url": f"{QWEN_MCP_BASE}/WebFetch/mcp",
+                       "headers": auth},
+    })
+    return {t.name: t for t in await client.get_tools()}
+
+
+def _ensure_qwen_tools() -> dict:
+    """按需加载并缓存千问 MCP 工具（双检锁，避免并发重复建会话）。"""
+    if not _qwen_tools:
+        with _qwen_lock:
+            if not _qwen_tools:
+                t0 = time.time()
+                _qwen_tools.update(asyncio.run(_load_qwen_tools()))
+                log.info("千问 MCP 工具加载完成: %s (%.2fs)",
+                         list(_qwen_tools), time.time() - t0)
+    return _qwen_tools
+
+
+def _blocks_to_text(raw) -> str:
+    """把 MCP 返回的 content blocks 拼成纯文本。"""
+    blocks = raw if isinstance(raw, list) else [raw]
+    text = ""
+    for b in blocks:
+        text += b.get("text", "") if isinstance(b, dict) else (getattr(b, "text", "") or "")
+    return text
+
+
+def _qwen_search(query: str) -> str:
+    """主后端：千问 EnhancedSearch 的 search_pro 工具，输出统一的 JSON 结构。"""
+    tools = _ensure_qwen_tools()
+    tool_obj = tools.get("search_pro")
+    if tool_obj is None:
+        raise RuntimeError(f"千问 MCP 未提供 search_pro（现有: {list(tools)}）")
+    text = _blocks_to_text(asyncio.run(tool_obj.ainvoke({"query": query})))
+    pages = json.loads(text).get("pages", [])
+    results = [{"title": p.get("title", ""), "url": p.get("url", ""),
+                "snippet": p.get("snippet", "")} for p in pages]
+    return json.dumps(results[:5], ensure_ascii=False)
+
+
+def _qwen_fetch(url: str) -> str:
+    """主后端：千问 WebFetch 的 web_fetch 工具，返回标准化 Markdown 正文。"""
+    tools = _ensure_qwen_tools()
+    tool_obj = tools.get("web_fetch")
+    if tool_obj is None:
+        raise RuntimeError(f"千问 MCP 未提供 web_fetch（现有: {list(tools)}）")
+    data = json.loads(_blocks_to_text(asyncio.run(tool_obj.ainvoke({"url": url}))))
+    return data.get("content", "")
+
+
+def _bing_search(query: str) -> str:
+    """降级后端：Bing HTML 抓取。"""
+    r = requests.get("https://cn.bing.com/search",
+                     params={"q": query, "count": 10},
+                     headers={"User-Agent": UA}, timeout=15)
+    r.raise_for_status()
+    tree = html.fromstring(r.text)
+    results = []
+    for li in tree.xpath('//li[contains(@class, "b_algo")]'):
+        a = li.xpath('.//h2/a')
+        if not a:
+            continue
+        p = li.xpath('.//p')
+        results.append({"title": a[0].text_content().strip(),
+                        "url": a[0].get("href", ""),
+                        "snippet": p[0].text_content().strip() if p else ""})
+    return json.dumps(results[:5], ensure_ascii=False)
+
+
+def _root_cause(exc: BaseException) -> str:
+    """把 ExceptionGroup 逐层展开为最内层根因；多项并列时只列一条并注明数量。"""
+    leaves: list[str] = []
+
+    def walk(e: BaseException) -> None:
+        subs = getattr(e, "exceptions", None)
+        if subs:
+            for s in subs:
+                walk(s)
+        else:
+            leaves.append(f"{type(e).__name__}: {e}")
+
+    walk(exc)
+    uniq = list(dict.fromkeys(leaves))
+    if not uniq:
+        return type(exc).__name__
+    if len(uniq) == 1:
+        return uniq[0]
+    return f"{uniq[0]}（另有 {len(uniq) - 1} 项同类失败）"
+
+
 @tool
 def web_search(query: str) -> str:
     """联网搜索指定关键词，返回多条结果的标题、链接与摘要（JSON 数组）。
-    检索后端：Bing（cn.bing.com）。"""
-    url = "https://cn.bing.com/search"
-    params = {"q": query, "count": 10}
-    try:
-        r = requests.get(url, params=params, headers={"User-Agent": UA}, timeout=15)
-        r.raise_for_status()
-        tree = html.fromstring(r.text)  # r.text 已按 utf-8 正确解码
-        results = []
-        for li in tree.xpath('//li[contains(@class, "b_algo")]'):
-            a = li.xpath('.//h2/a')
-            if not a:
-                continue
-            title = a[0].text_content().strip()
-            href = a[0].get("href", "")
-            p = li.xpath('.//p')
-            snippet = p[0].text_content().strip() if p else ""
-            results.append({"title": title, "url": href, "snippet": snippet})
-        if not results:
-            return "[]"
-        return json.dumps(results[:5], ensure_ascii=False)
-    except Exception as e:  # 记录故障，返回空结果由上层降级
-        log.warning("web_search 失败 query=%s err=%s", query, e)
-        raise
+    主后端：千问 EnhancedSearch MCP（联网搜索增强版）；失败重试 1 次后降级 Bing。"""
+    last = None
+    for attempt in (1, 2):
+        try:
+            out = _qwen_search(query)
+            STATS["search_backend"]["qwen_mcp"] += 1
+            return out
+        except Exception as e:
+            last = e
+            if attempt == 1:
+                log.warning("千问 EnhancedSearch 第 1 次失败(%s)，重试…", _root_cause(e))
+                time.sleep(1.0)
+    STATS["search_backend"]["bing_fallback"] += 1
+    msg = f"千问 EnhancedSearch 失败({_root_cause(last)})，已降级 Bing"
+    log.warning(msg)
+    STATS["errors"].append(msg)
+    return _bing_search(query)
 
 
-@tool
-def web_fetch(url: str) -> str:
-    """读取指定网页并提取正文纯文本（截取前 3000 字符）。"""
+def _http_fetch(url: str) -> str:
+    """降级后端：requests + lxml 提取正文纯文本。"""
     r = requests.get(url, headers={"User-Agent": UA}, timeout=15,
                      allow_redirects=True)
     r.raise_for_status()
@@ -136,8 +244,29 @@ def web_fetch(url: str) -> str:
     for bad in tree.xpath('//script | //style | //nav | //footer | //header | //aside'):
         bad.drop_tree()
     text = " ".join(p.text_content().strip() for p in tree.xpath('//p'))
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:3000]
+    return re.sub(r"\s+", " ", text).strip()[:3000]
+
+
+@tool
+def web_fetch(url: str) -> str:
+    """读取指定网页正文（截取前 3000 字符）。
+    主后端：千问 MCP web_fetch（标准化 Markdown）；失败重试 1 次后降级本地抓取。"""
+    last = None
+    for attempt in (1, 2):
+        try:
+            out = _qwen_fetch(url)
+            STATS["fetch_backend"]["qwen_mcp"] += 1
+            return out[:3000]
+        except Exception as e:
+            last = e
+            if attempt == 1:
+                log.warning("千问 web_fetch 第 1 次失败(%s)，重试…", _root_cause(e))
+                time.sleep(1.0)
+    STATS["fetch_backend"]["local_fallback"] += 1
+    msg = f"千问 web_fetch 失败({_root_cause(last)})，已降级本地抓取: {url}"
+    log.warning(msg)
+    STATS["errors"].append(msg)
+    return _http_fetch(url)
 
 
 @tool
@@ -294,8 +423,31 @@ def verify_node(state: BriefState) -> dict:
     return {"facts": resp.content}
 
 
+# 来源小节识别：支持 "## 来源" / "**来源**" / "来源：" / "参考来源" / "来源（Sources）" 等写法
+SRC_HEADING_RE = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*)?\s*(?:参考)?(?:来源|来源链接|参考资料|Sources|References)"
+    r"(?:\s*[（(][^)）]*[)）])?(?:\*\*)?\s*[:：]?\s*$", re.M | re.I)
+
+
+def split_body_sources(brief: str) -> tuple[str, str]:
+    """把简报拆成 (正文, 来源小节)。“来源”小节不计入 500 字限制。"""
+    m = SRC_HEADING_RE.search(brief)
+    if not m:
+        return brief, ""
+    return brief[:m.start()], brief[m.start():]
+
+
+def count_body_chars(text: str) -> int:
+    """统计正文字数：排除“来源”小节，去 Markdown 语法（链接保留文字）、去空白后计字符。"""
+    body, _ = split_body_sources(text)
+    body = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", body)
+    body = re.sub(r"[#*>`\-|]", "", body)
+    body = re.sub(r"\s+", "", body)
+    return len(body)
+
+
 def brief_node(state: BriefState) -> dict:
-    """节点5：生成 500 字以内、带来源链接的 Markdown 技术简报。"""
+    """节点5：生成技术简报，**正文** ≤500 字（“来源”小节不计入），末尾附来源链接。"""
     t0 = time.time()
     topic = state["topic"]
     facts = state.get("facts") or ""
@@ -317,26 +469,30 @@ def brief_node(state: BriefState) -> dict:
     record_usage(resp)
     brief = resp.content
 
-    # 字数自检：去掉 Markdown 语法、链接保留文字、去空白后统计
-    def _count(text: str) -> int:
-        body = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
-        body = re.sub(r"[#*>`\-|]", "", body)
-        body = re.sub(r"\s+", "", body)
-        return len(body)
-
-    n = _count(brief)
+    # 字数自检：仅统计正文（“来源”小节不计入 500 字限制）
+    n = count_body_chars(brief)
     if n > 500:
-        log.warning("简报正文字数 %d 超限，触发压缩重试", n)
-        STATS["errors"].append(f"简报首次生成超字数({n}字)，已触发压缩")
-        p2 = (f"以下简报正文字数 {n} 字，超过 500 字限制。请压缩到 500 字以内，"
-              f"保持“来源”小节与链接不变：\n\n{brief}")
+        STATS["errors"].append(f"简报正文首次生成超字数({n}字)，已触发压缩")
+    attempt = 0
+    while count_body_chars(brief) > 500 and attempt < 3:
+        attempt += 1
+        cur = count_body_chars(brief)
+        log.warning("简报正文 %d 字超限（来源不计入），第 %d 次压缩", cur, attempt)
+        p2 = (f"以下简报的**正文**（不含“来源”小节）为 {cur} 字，需压缩到 400 字以内："
+              f"只保留最重要的事实，删除修饰语、重复表述与次要例证；"
+              f"“来源”小节及其中的链接必须原样保留。\n\n{brief}")
         resp2 = llm.invoke(p2)
         record_usage(resp2)
         brief = resp2.content
-        log.info("压缩后正文字数: %d", _count(brief))
+
+    _, src_txt = split_body_sources(brief)
+    src_chars = len(re.sub(r"\s+", "", src_txt))
+    log.info("简报定稿：正文 %d 字（≤500），来源 %d 字不计入，压缩 %d 次",
+             count_body_chars(brief), src_chars, attempt)
 
     STATS["node_timings"]["brief"] = round(time.time() - t0, 2)
-    log.info("brief 完成: %d 字符(正文 %d)", len(brief), _count(brief))
+    log.info("brief 完成: 全文 %d 字符 | 正文 %d 字 | 来源 %d 字",
+             len(brief), count_body_chars(brief), src_chars)
     return {"brief": brief}
 
 
@@ -391,6 +547,8 @@ def main() -> None:
         "total_elapsed_s": total,
         "node_timings": STATS["node_timings"],
         "tool_calls": STATS["tool_calls"],
+        "search_backend": STATS["search_backend"],
+        "fetch_backend": STATS["fetch_backend"],
         "llm_calls": STATS["llm_calls"],
         "token_input": STATS["token_input"],
         "token_output": STATS["token_output"],

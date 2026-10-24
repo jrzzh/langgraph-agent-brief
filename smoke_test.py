@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-冒烟测试：环境导入 / DeepSeek 连通性 / 联网检索与网页解析可用性
+冒烟测试：环境导入 / 模型连通性 / 工具后端可用性
 说明：
-- 检索后端为 Bing（cn.bing.com），即本项目统一工具集中「联网搜索」的实现
+- 工具主后端为千问 MCP（EnhancedSearch 搜索 + WebFetch 抓取），Bing 与 requests+lxml 为降级实现
 - 版本用 importlib.metadata 读取（langgraph 等包不暴露 __version__，旧写法会显示 unknown）
+- 未配置 DASHSCOPE_API_KEY 时，MCP 检查会提示"将降级"，主流程仍可运行
 """
 import importlib.metadata as md
 import json
@@ -17,6 +18,7 @@ results = {}
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+MCP_BASE = "https://maas.qianwenaiapi.com/api/v1/mcps"
 
 
 def ver(pkg: str) -> str:
@@ -59,6 +61,7 @@ try:
     resp = llm.invoke("用一句话回答：你是谁？")
     results["deepseek"] = {
         "ok": True,
+        "model": os.environ["DEEPSEEK_MODEL"],
         "reply": resp.content[:80],
         "elapsed_s": round(time.time() - t0, 2),
         "usage": getattr(resp, "usage_metadata", None),
@@ -66,7 +69,39 @@ try:
 except Exception as e:
     results["deepseek"] = {"ok": False, "error": repr(e)}
 
-# 3. 联网检索：Bing（统一工具集中 web_search 的实际后端）
+# 3. 千问 MCP（联网搜索 / 网页抓取的主后端）：工具自动发现
+try:
+    import asyncio
+
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+
+    key = os.environ.get("DASHSCOPE_API_KEY", "")
+    if not key:
+        results["qwen_mcp"] = {"ok": False,
+                               "note": "未配置 DASHSCOPE_API_KEY，工具将降级为本地实现"}
+    else:
+        async def _probe():
+            auth = {"Authorization": f"Bearer {key}"}
+            client = MultiServerMCPClient({
+                "qwen-search": {"transport": "streamable_http",
+                                "url": f"{MCP_BASE}/EnhancedSearch/mcp", "headers": auth},
+                "qwen-fetch": {"transport": "streamable_http",
+                               "url": f"{MCP_BASE}/WebFetch/mcp", "headers": auth},
+            })
+            return await client.get_tools()
+
+        t0 = time.time()
+        tools = asyncio.run(_probe())
+        results["qwen_mcp"] = {
+            "ok": True,
+            "tools": sorted(t.name for t in tools),
+            "elapsed_s": round(time.time() - t0, 2),
+        }
+except Exception as e:
+    results["qwen_mcp"] = {"ok": False, "error": repr(e)[:200],
+                           "note": "MCP 不可用时主流程会自动降级本地实现"}
+
+# 4. 降级后端：Bing 检索可用性
 try:
     import requests
     from lxml import html
