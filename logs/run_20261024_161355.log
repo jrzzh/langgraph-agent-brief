@@ -1,0 +1,4 @@
+16:13:56 | WARNING | 千问 EnhancedSearch 第 1 次失败(HTTPStatusError: Client error '401 Unauthorized' for url 'https://maas.qianwenaiapi.com/api/v1/mcps/WebFetch/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401)，重试…
+16:13:57 | WARNING | 千问 EnhancedSearch 失败(HTTPStatusError: Client error '401 Unauthorized' for url 'https://maas.qianwenaiapi.com/api/v1/mcps/EnhancedSearch/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401)，已降级 Bing

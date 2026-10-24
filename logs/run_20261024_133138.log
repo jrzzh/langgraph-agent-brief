@@ -1,0 +1,16 @@
+13:31:38 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:31:38 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-v4-pro | RUN_ID=20261024_133138
+13:31:38 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:31:43 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM Context Engineering', '上下文工程 提示词']
+13:31:45 | WARNING | 千问 EnhancedSearch 失败(ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception))，已降级 Bing
+13:31:48 | WARNING | 千问 EnhancedSearch 失败(ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception))，已降级 Bing
+13:31:50 | WARNING | 千问 EnhancedSearch 失败(ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception))，已降级 Bing
+13:31:51 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+13:31:53 | INFO    | fetch 完成: 读取 3 个网页
+13:32:51 | INFO    | verify 完成: 核验结论 840 字符
+13:33:07 | INFO    | brief 完成: 798 字符(正文 486)
+13:33:07 | INFO    | 总耗时 88.45s | LLM调用 3 次 | token(in=1956, out=7354, 总=9310)
+13:33:07 | WARNING | 故障记录: ['网页读取失败: https://baike.baidu.com/item/%E5%A4%A7/34128', '网页读取失败: https://zdic.net/hans/%E5%A4%A7', '网页读取失败: https://www.hanyuguoxue.com/zidian/zi-22823', '千问 EnhancedSearch 失败(ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception))，已降级 Bing', '千问 EnhancedSearch 失败(ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception))，已降级 Bing', '千问 EnhancedSearch 失败(ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception))，已降级 Bing']
+13:33:07 | INFO    | 简报已保存: output\brief_20261024_133138.md
+13:33:07 | INFO    | 统计已保存: output\stats_20261024_133138.json
+13:33:07 | INFO    | ========== 实测结束 ==========

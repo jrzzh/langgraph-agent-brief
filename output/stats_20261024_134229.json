@@ -1,0 +1,31 @@
+{
+  "run_id": "20261024_134229",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 172.23,
+  "node_timings": {
+    "plan": 3.87,
+    "search": 4.74,
+    "fetch": 5.03,
+    "verify": 50.14,
+    "brief": 108.46
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "llm_calls": 4,
+  "token_input": 2901,
+  "token_output": 18211,
+  "token_total": 21112,
+  "errors": [
+    "简报首次生成超字数(595字)，已触发压缩"
+  ]
+}

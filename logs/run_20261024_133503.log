@@ -1,0 +1,14 @@
+13:35:03 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:35:03 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-v4-pro | RUN_ID=20261024_133503
+13:35:03 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:35:10 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM上下文工程', 'Context Engineering LLM']
+13:35:13 | INFO    | 千问 MCP 工具加载完成: ['search_pro'] (2.95s)
+13:35:15 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+13:35:15 | INFO    | fetch 完成: 读取 3 个网页
+13:36:07 | INFO    | verify 完成: 核验结论 957 字符
+13:36:31 | INFO    | brief 完成: 768 字符(正文 401)
+13:36:31 | INFO    | 总耗时 88.28s | LLM调用 3 次 | token(in=1842, out=8218, 总=10060)
+13:36:31 | WARNING | 故障记录: ['网页读取失败: https://developer.baidu.com/article/detail.html?id=6340089', '网页读取失败: https://developer.baidu.com/article/detail.html?id=8019674', '网页读取失败: https://developer.baidu.com/article/detail.html?id=6340045']
+13:36:31 | INFO    | 简报已保存: output\brief_20261024_133503.md
+13:36:31 | INFO    | 统计已保存: output\stats_20261024_133503.json
+13:36:31 | INFO    | ========== 实测结束 ==========

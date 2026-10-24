@@ -1,0 +1,29 @@
+{
+  "run_id": "20261024_165717",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 80.36,
+  "node_timings": {
+    "plan": 8.32,
+    "search": 3.63,
+    "fetch": 2.9,
+    "verify": 37.4,
+    "brief": 28.1
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "llm_calls": 3,
+  "token_input": 2247,
+  "token_output": 6710,
+  "token_total": 8957,
+  "errors": []
+}

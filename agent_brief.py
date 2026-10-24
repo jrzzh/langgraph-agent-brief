@@ -46,28 +46,42 @@ OUT_DIR = os.path.join(BASE_DIR, "output")
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 
+
+def _rel(path: str) -> str:
+    """转成相对项目根目录的路径，避免日志中写入本机绝对路径（便于提交/分享）。"""
+    try:
+        return os.path.relpath(path, BASE_DIR)
+    except ValueError:          # 跨盘符等无法求相对路径的情况
+        return os.path.basename(path)
+
 # ---------------------------------------------------------------------------
 # 日志配置（stdout + 文件，UTF-8）
 # ---------------------------------------------------------------------------
 LOG_FILE = os.path.join(LOG_DIR, f"run_{RUN_ID}.log")
 
 
+log = logging.getLogger("langgraph")
+log.setLevel(logging.DEBUG)
+_handlers_ready = False
+
+
 def setup_logging() -> logging.Logger:
-    logger = logging.getLogger("langgraph")
-    logger.setLevel(logging.DEBUG)
+    """挂载文件与控制台 handler。
+
+    延迟到 main() 中调用，避免"仅 import 模块"时产生 0 字节日志文件。
+    """
+    global _handlers_ready
+    if _handlers_ready:
+        return log
     fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(message)s", "%H:%M:%S")
-    # 文件
-    fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    fh = logging.FileHandler(LOG_FILE, encoding="utf-8")     # 文件
     fh.setFormatter(fmt)
-    logger.addHandler(fh)
-    # 控制台
-    ch = logging.StreamHandler(sys.stdout)
+    log.addHandler(fh)
+    ch = logging.StreamHandler(sys.stdout)                   # 控制台
     ch.setFormatter(fmt)
-    logger.addHandler(ch)
-    return logger
-
-
-log = setup_logging()
+    log.addHandler(ch)
+    _handlers_ready = True
+    return log
 
 # ---------------------------------------------------------------------------
 # 全局统计（token 消耗、各节点耗时、故障）
@@ -519,6 +533,7 @@ def build_graph():
 # 主流程
 # ---------------------------------------------------------------------------
 def main() -> None:
+    setup_logging()          # 延迟挂载日志 handler：仅 import 时不产生空日志文件
     topic = sys.argv[1] if len(sys.argv) > 1 else "大模型上下文工程"
     log.info("========== LangGraph 统一任务实测开始 ==========")
     log.info("主题=%s | 模型=%s | RUN_ID=%s", topic,
@@ -570,8 +585,8 @@ def main() -> None:
     with open(stat_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
-    log.info("简报已保存: %s", brief_path)
-    log.info("统计已保存: %s", stat_path)
+    log.info("简报已保存: %s", _rel(brief_path))
+    log.info("统计已保存: %s", _rel(stat_path))
     log.info("========== 实测结束 ==========")
     print("\n===== 最终简报 =====\n")
     print(final.get("brief", ""))
