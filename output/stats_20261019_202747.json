@@ -1,0 +1,25 @@
+{
+  "run_id": "20261019_202747",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 11.82,
+  "node_timings": {
+    "plan": 2.07,
+    "search": 1.19,
+    "fetch": 1.17,
+    "verify": 3.42,
+    "brief": 3.96
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "llm_calls": 4,
+  "token_input": 2673,
+  "token_output": 1454,
+  "token_total": 4127,
+  "errors": [
+    "网页读取失败: https://zhuanlan.zhihu.com/p/7046080918",
+    "网页读取失败: https://zhuanlan.zhihu.com/p/622518771",
+    "简报首次生成超字数(525字)，已触发压缩"
+  ]
+}

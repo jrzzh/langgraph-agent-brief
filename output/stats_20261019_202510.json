@@ -1,0 +1,25 @@
+{
+  "run_id": "20261019_202510",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 17.26,
+  "node_timings": {
+    "plan": 1.55,
+    "search": 11.95,
+    "fetch": 0.0,
+    "verify": 2.24,
+    "brief": 1.52
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 0
+  },
+  "llm_calls": 3,
+  "token_input": 272,
+  "token_output": 320,
+  "token_total": 592,
+  "errors": [
+    "搜索失败(重试3次后): LLM context engineering",
+    "搜索失败(重试3次后): 大模型上下文工程",
+    "搜索失败(重试3次后): 大模型 上下文 提示工程"
+  ]
+}

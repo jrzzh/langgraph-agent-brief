@@ -1,0 +1,18 @@
+[project]
+name = "langgraph-brief"
+version = "0.1.0"
+description = "LangGraph 单框架实测：联网检索 → 事实交叉核验 → 500字技术简报（含 MCP 接入）"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.2.16",
+    "langchain>=1.4.6",
+    "langchain-openai>=1.7.2",
+    "langchain-community>=0.4.2",
+    "langchain-mcp-adapters>=0.3.2",
+    "requests>=2.34.2",
+    "lxml>=6.1.3",
+]
+
+[tool.uv]
+# 受限环境将缓存/索引放在项目内，避免写入用户全局缓存被拒
+cache-dir = ".uv-cache"

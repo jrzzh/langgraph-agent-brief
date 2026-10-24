@@ -1,0 +1,15 @@
+11:57:29 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+11:57:29 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-v4-pro | RUN_ID=20261024_115729
+11:57:29 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+11:57:33 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM上下文工程', 'Context Engineering 大模型']
+11:57:35 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+11:57:37 | INFO    | fetch 完成: 读取 3 个网页
+11:58:16 | INFO    | verify 完成: 核验结论 1109 字符
+11:58:47 | WARNING | 简报正文字数 663 超限，触发压缩重试
+11:59:06 | INFO    | 压缩后正文字数: 583
+11:59:06 | INFO    | brief 完成: 1008 字符(正文 583)
+11:59:06 | INFO    | 总耗时 97.20s | LLM调用 4 次 | token(in=2729, out=11059, 总=13788)
+11:59:06 | WARNING | 故障记录: ['网页读取失败: https://zhuanlan.zhihu.com/p/7046080918', '网页读取失败: https://zhuanlan.zhihu.com/p/1989728299547639935', '网页读取失败: https://artificialanalysis.ai/zh/leaderboards/models', '简报首次生成超字数(663字)，已触发压缩']
+11:59:06 | INFO    | 简报已保存: output\brief_20261024_115729.md
+11:59:06 | INFO    | 统计已保存: output\stats_20261024_115729.json
+11:59:06 | INFO    | ========== 实测结束 ==========

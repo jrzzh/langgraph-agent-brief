@@ -1,0 +1,26 @@
+{
+  "run_id": "20261024_115729",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 97.2,
+  "node_timings": {
+    "plan": 4.68,
+    "search": 1.2,
+    "fetch": 2.08,
+    "verify": 38.92,
+    "brief": 50.33
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "llm_calls": 4,
+  "token_input": 2729,
+  "token_output": 11059,
+  "token_total": 13788,
+  "errors": [
+    "网页读取失败: https://zhuanlan.zhihu.com/p/7046080918",
+    "网页读取失败: https://zhuanlan.zhihu.com/p/1989728299547639935",
+    "网页读取失败: https://artificialanalysis.ai/zh/leaderboards/models",
+    "简报首次生成超字数(663字)，已触发压缩"
+  ]
+}

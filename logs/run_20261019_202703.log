@@ -1,0 +1,13 @@
+20:27:03 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+20:27:03 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-chat | RUN_ID=20261019_202703
+20:27:03 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+20:27:05 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM context engineering', '大模型 上下文 提示工程']
+20:27:06 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+20:27:08 | INFO    | fetch 完成: 读取 3 个网页
+20:27:13 | INFO    | verify 完成: 核验结论 1451 字符
+20:27:16 | INFO    | brief 完成: 1201 字符
+20:27:16 | INFO    | 总耗时 12.52s | LLM调用 3 次 | token(in=2375, out=1329, 总=3704)
+20:27:16 | WARNING | 故障记录: ['网页读取失败: https://zhuanlan.zhihu.com/p/7046080918', '网页读取失败: https://zhuanlan.zhihu.com/p/622518771']
+20:27:16 | INFO    | 简报已保存: output\brief_20261019_202703.md
+20:27:16 | INFO    | 统计已保存: output\stats_20261019_202703.json
+20:27:16 | INFO    | ========== 实测结束 ==========
