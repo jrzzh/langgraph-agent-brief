@@ -57,7 +57,6 @@ tools = await client.get_tools()      # 自动发现: search_pro / web_fetch
 | `mcp_server.py` | 本地 MCP Server（FastMCP），示教用 |
 | `mcp_demo.py` | 经 `langchain-mcp-adapters` 把 MCP 工具接入 LangGraph |
 | `smoke_test.py` | 环境导入 / 模型连通性 / 检索可用性冒烟测试 |
-| `generate_fill_form.py` | 生成 11 维度实测填表数据（xlsx） |
 | `logs/` | 运行日志 |
 | `output/` | 技术简报与统计 JSON |
 
