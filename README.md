@@ -130,34 +130,60 @@ uv sync
 cp .env.example .env      # Windows: copy .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY 与 DASHSCOPE_API_KEY
 
-# 3) 运行统一任务
-uv run python agent_brief.py "大模型上下文工程"
+# 3) 运行统一任务（本项目的两套实现，任选其一）
+uv run python agent_deepagents.py "大模型上下文工程"                  # ② 官方 deepagents 原生 Skills
+uv run python agent_brief.py "大模型上下文工程"                       # ① 自建 Skills 层，默认 --skills=lazy
+uv run python agent_brief.py "大模型上下文工程" --skills=eager        # ① 对照：启动时全量加载技能
+uv run python agent_brief.py "大模型上下文工程" --skills=off          # ① 基线：不使用技能
 
 # 4) 本地 MCP Server 示教（先起 server，再用另一终端跑 client）
 uv run python mcp_server.py --transport streamable-http
 uv run python mcp_demo.py
 ```
 
-产出：`output/brief_<RUN_ID>.md`、`output/stats_<RUN_ID>.json`、`logs/run_<RUN_ID>.log`。
+产出：
 
-## 实测要点
+| 实现 | 简报 | 统计 | 日志 |
+| --- | --- | --- | --- |
+| `agent_brief.py` | `output/brief_<RUN_ID>.md` | `output/stats_<RUN_ID>.json` | `logs/run_<RUN_ID>.log` |
+| `agent_deepagents.py` | `output/brief_deepagents_<RUN_ID>.md` | `output/stats_deepagents_<RUN_ID>.json` | `logs/deepagents_<RUN_ID>.log` |
 
-- **一次完整运行**：总耗时 158.61s，token 11481（LLM 3 次调用），检索得 15 条结果，**零故障记录**
-- **MCP 接入**：一次 `get_tools()` 自动发现 2 个生产级 MCP 工具（耗时 3.19s），并作为节点接入状态图
-- **双后端降级**：MCP 失败 → 重试 1 次 → 降级本地实现。实测有效：某次运行中 MCP 的 3 个并发查询瞬时
-  全部失败，自动降级后任务完整跑完并产出简报
-- **质量提升**：接入 MCP 后网页读取成功率 **0/3 → 3/3**，简报正文 **338 字达标**
-  （500 字限制**只约束正文**，"来源"小节不计入）
-- **模型兼容性**：切换模型只改一个环境变量、代码零改动；但实测指标差异显著
-  （同一任务下另一模型为 11.82s / 4127 token）
+> 未配置 `DASHSCOPE_API_KEY` 也能跑通：工具会自动降级为本地实现（Bing 检索 / requests+lxml 抓取）。
+
+## 实测要点（同任务、同模型，两种实现各跑多次）
+
+| 实现 | 耗时 | 输入 token | 技能加载 |
+| --- | --- | --- | --- |
+| `agent_brief.py --skills=lazy`（自建） | 147.5 ~ 386.6 s | 4.1 ~ 4.2 k | 3/5 |
+| `agent_brief.py --skills=eager`（对照） | 512.1 s | 5.1 k | 5/5 |
+| `agent_deepagents.py`（官方原生） | 126.5 ~ 433.2 s | 54.7 ~ 111.5 k | 5/5 |
+
+- **耗时相当、且各自波动都很大**（实现内部波动 > 实现之间差异），主导因素是**单次调用的输出长度**，
+  因此**不能表述为"自建更快"**
+- **真正的架构差异在输入 token：13~27 倍** —— 自建每步重拼窄 prompt、历史不累积；
+  deepagents 每轮重发全部历史
+- **技能加载机制**：自建用一次被强约束的路由调用稳定选出 3/5；
+  deepagents 由模型自主 `read_file`，四次运行均读满 5/5
+- **MCP 接入**：一次 `get_tools()` 自动发现 2 个生产级 MCP 工具（耗时 3.19 s），并作为节点接入状态图
+- **双后端降级**：MCP 失败 → 重试 1 次 → 降级本地实现；实测某次运行中 3 个并发查询瞬时全部失败，
+  自动降级后任务仍完整跑完并产出简报
+- **质量提升**：接入 MCP 后网页读取成功率 **0/3 → 3/3**
+- **模型兼容性**：切换模型只改 `DEEPSEEK_MODEL` 一个环境变量、代码零改动
+  （同一任务下另一模型为 11.82 s / 4 127 token）
+
+> 多次运行的完整数据、受控对照（lazy vs eager）与取舍分析见 [`skills/README.md`](skills/README.md) §四。
 
 ## 已知限制
 
-- **字数口径**：500 字限制**只约束正文**，"来源"小节（链接）不计入；模型偶有超长（实测 1 次 613 字），
-  故保留**循环压缩**兜底，会额外增加 token 消耗
+- **未配置 `.env` 时导入会直接失败**：`agent_brief.py` 在**模块级**构造模型客户端，
+  缺少 `DEEPSEEK_API_KEY` 会抛 `KeyError: 'DEEPSEEK_API_KEY'`。
+  请先按「快速开始」第 2 步配置 `.env`（这是预期行为，用于快速暴露配置遗漏）
+- **字数口径**：500 字限制**只约束正文**，"来源"小节（链接）不计入，故保留**循环压缩**兜底，
+  会额外增加 token 消耗。实测仍有超限个例：deepagents 版正文 612 字（超 22%），
+  且模型对该次输出的自估字数（"约 460 字"）**偏低约 25%**
 - MCP 的 `stdio` 传输在受限沙箱环境下不可用（命名管道被禁），故采用 `streamable-http`
 - 远程 MCP 服务依赖网络；不可用时自动降级本地实现（检索质量与反爬能力会下降）
 - 部分站点（如知乎）拒绝程序化读取，此时该来源会被跳过并记录
 - 技能层 token 计量依赖 `tiktoken`，**首次使用需联网下载约 1.7 MB 词表**（实测 28 s，
   之后缓存命中约 165 ms）；离线环境可设 `SKILL_TOKEN_ESTIMATOR=heuristic` 免网络，
-  但两种估算器口径不同，横向比较时不可混用
+  但两种估算器口径不同，横向比较时不可混用。词表缓存已固定到项目内 `.cache/tiktoken`（不入库）

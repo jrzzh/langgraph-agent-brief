@@ -12,6 +12,10 @@ dependencies = [
     "requests>=2.34.2",
     "lxml>=6.1.3",
     "deepagents>=0.7.32",
+    "langchain-core>=1.7.0",
+    "mcp>=1.30.0",
+    "python-dotenv>=1.2.4",
+    "tiktoken>=0.14.0",
 ]
 
 [tool.uv]
