@@ -1,0 +1,55 @@
+{
+  "run_id": "20261029_140646",
+  "impl": "deepagents(create_deep_agent + SkillsMiddleware)",
+  "topic": "大模型上下文工程",
+  "model": "deepseek-v4-pro",
+  "skills_source": "/skills/",
+  "skills_disclosure": "3 级：metadata -> SKILL.md(read_file) -> resources",
+  "messages": 25,
+  "wall_elapsed_s": 126.46,
+  "build_elapsed_s": 0.09,
+  "node_timings": {
+    "model": 115.63,
+    "tools": 24.06,
+    "SkillsMiddleware.before_agent": 0.01,
+    "SkillsMiddleware.before_model": 0.0,
+    "PatchToolCallsMiddleware.before_agent": 0.0,
+    "_ParentNotifierMiddleware.after_agent": 0.0
+  },
+  "node_counts": {
+    "PatchToolCallsMiddleware.before_agent": 1,
+    "SkillsMiddleware.before_agent": 1,
+    "SkillsMiddleware.before_model": 7,
+    "model": 7,
+    "tools": 17,
+    "_ParentNotifierMiddleware.after_agent": 1
+  },
+  "llm_calls": 7,
+  "llm_elapsed_s": 115.61,
+  "token_input": 94802,
+  "token_output": 7987,
+  "tool_calls": 29,
+  "tool_elapsed_s": 42.14,
+  "tool_name_counts": {
+    "read_file": 5,
+    "search_pro": 7,
+    "web_search": 7,
+    "web_fetch": 10
+  },
+  "skills_loaded": [
+    "source-triage",
+    "search-strategy",
+    "fact-cross-verify",
+    "citation-format",
+    "brief-writing"
+  ],
+  "skills_available": [
+    "brief-writing",
+    "citation-format",
+    "fact-cross-verify",
+    "search-strategy",
+    "source-triage"
+  ],
+  "brief_chars": 948,
+  "log_file": "logs\\deepagents_20261029_140646.log"
+}

@@ -1,0 +1,73 @@
+========== deepagents 原生 Skills 启动 RUN_ID=20261029_140940 ==========
+主题=大模型上下文工程 | 模型=deepseek-v4-pro | 技能源=/skills/
+
+==============================================================================
+deepagents 原生 Skills 运行日志
+RUN_ID  : 20261029_140940
+主题    : 大模型上下文工程
+模型    : deepseek-v4-pro
+技能源  : /skills/
+backend : FilesystemBackend(virtual_mode=True，根目录=项目根)
+agent 构建耗时: 0.09s（含 SkillsMiddleware 扫描技能）
+==============================================================================
+
+【技能加载】由 read_file 工具调用解析
+  1. citation-format          /skills/citation-format/SKILL.md             0.0s
+  2. brief-writing            /skills/brief-writing/SKILL.md               0.0s
+  3. fact-cross-verify        /skills/fact-cross-verify/SKILL.md           0.0s
+  4. search-strategy          /skills/search-strategy/SKILL.md             0.0s
+  5. source-triage            /skills/source-triage/SKILL.md               0.0s
+  合计加载 5/5 个技能（全部）
+
+【图节点耗时】（LangGraph 实际执行的节点，按累计时间降序）
+节点                                    次数      累计(s)             占比
+  --------------------------------------------------------------
+model                                 6       187.03         94.0%
+tools                                 17      31.58          15.9%
+SkillsMiddleware.before_agent         1       0.01            0.0%
+SkillsMiddleware.before_model         6       0.00            0.0%
+PatchToolCallsMiddleware.before_agent  1       0.00            0.0%
+_ParentNotifierMiddleware.after_agent  1       0.00            0.0%
+
+【LLM 调用明细】
+#     开始(s)      耗时(s)      输入token          输出token
+  ------------------------------------------------
+1     0.02       6.23       3819                 477
+2     6.26       7.14       5925                 505
+3     17.15      8.77       10103                647
+4     30.10      11.93      11375                783
+5     43.60      95.88      14064               7741
+6     141.96     57.07      23463               4718
+
+【工具调用明细】
+#     开始(s)      耗时(s)      工具            输出                                           参数摘要
+  ------------------------------------------------------------------------------------
+1     6.25       0.00       read_file     570      {'file_path': '/skills/citation-format/S
+2     6.25       0.00       read_file     660      {'file_path': '/skills/brief-writing/SKI
+3     6.25       0.00       read_file     721      {'file_path': '/skills/fact-cross-verify
+4     6.25       0.00       read_file     683      {'file_path': '/skills/search-strategy/S
+5     6.25       0.00       read_file     717      {'file_path': '/skills/source-triage/SKI
+6     13.40      3.31       web_search    1170                       {'query': '大模型 上下文工程'}
+7     13.39      3.40       web_search    2761     {'query': 'Anthropic context engineering
+8     13.40      3.50       web_search    3012         {'query': 'context engineering LLM'}
+9     13.40      3.63       web_search    1192                    {'query': '上下文窗口 管理 大模型'}
+10    13.40      3.76       web_search    1237       {'query': '上下文工程 context engineering'}
+11    25.92      0.86       web_fetch     75       {'url': 'https://baike.baidu.com/item/%E
+12    25.92      4.17       web_fetch     3093     {'url': 'https://www.anthropic.com/engin
+13    42.04      1.09       web_fetch     89       {'url': 'https://juejin.cn/post/76581719
+14    42.04      1.30       web_search    3812     {'query': 'context engineering write sel
+15    42.04      1.57       web_search    1432     {'query': 'Anthropic "Effective Context 
+16    139.48     2.47       web_search    1282     {'query': 'Anthropic 上下文工程 文章 发布 2025年9月
+17    139.48     2.48       web_search    2756     {'query': '"Effective context engineerin
+
+【汇总】
+  墙钟总耗时 : 199.04s（含 agent 构建 0.09s）
+  LLM 调用   : 6 次  187.02s  (94.0%)  token in=68749 out=14871 总=83620
+  工具调用   : 17 次（顶层）  31.54s  {'read_file': 5, 'web_search': 9, 'web_fetch': 3}
+  嵌套调用   : 12 次  {'search_pro': 9, 'web_fetch': 3}（web_search/web_fetch 内部的 MCP 工具，已排除避免重复计数）
+  技能加载   : 5/5 个  ['citation-format', 'brief-writing', 'fact-cross-verify', 'search-strategy', 'source-triage']
+  简报字数   : 1244
+==============================================================================
+简报已保存: output\brief_deepagents_20261029_140940.md
+统计已保存: output\stats_deepagents_20261029_140940.json
+日志已保存: logs\deepagents_20261029_140940.log

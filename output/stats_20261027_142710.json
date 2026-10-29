@@ -1,0 +1,55 @@
+{
+  "run_id": "20261027_142710",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 155.12,
+  "node_timings": {
+    "plan": 6.69,
+    "skill_select": 11.13,
+    "search": 3.93,
+    "fetch": 1.09,
+    "verify": 74.14,
+    "brief": 58.13
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "skills": {
+    "mode": "lazy",
+    "skill_count": 5,
+    "skill_names": [
+      "brief-writing",
+      "citation-format",
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "catalog_chars": 445,
+    "catalog_tokens": 311,
+    "loaded": [],
+    "loaded_count": 0,
+    "loaded_body_chars": 0,
+    "loaded_body_tokens": 0,
+    "all_body_chars": 1970,
+    "all_body_tokens": 1800,
+    "scan_ms": 10.99,
+    "preload_ms": 0.0,
+    "loaded_detail": {},
+    "token_estimator": "tiktoken/cl100k_base",
+    "estimator_init_ms": 79.82
+  },
+  "skills_used": [],
+  "llm_calls": 4,
+  "token_input": 2475,
+  "token_output": 9163,
+  "token_total": 11638,
+  "errors": []
+}

@@ -34,6 +34,14 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
+try:                                    # 技能层：声明式 SKILL.md + 渐进式披露
+    from skill_loader import SkillRegistry
+
+    SKILLS_AVAILABLE = True
+except Exception:                       # 技能层缺失时不影响主流程
+    SkillRegistry = None                # type: ignore
+    SKILLS_AVAILABLE = False
+
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -95,6 +103,7 @@ STATS = {
     "search_backend": {"qwen_mcp": 0, "bing_fallback": 0},
     "fetch_backend": {"qwen_mcp": 0, "local_fallback": 0},
     "errors": [],
+    "skills": {},
 }
 
 
@@ -312,6 +321,8 @@ class BriefState(TypedDict):
     fetched: str                 # 拼接的网页正文
     facts: str                   # 交叉核验结论
     brief: str                   # 最终简报
+    skills_used: list[str]       # 技能路由选中的技能名
+    skill_instructions: str      # 注入后续节点的技能正文（渐进式披露的产物）
     errors: Annotated[list[str], operator.add]  # 故障累积
 
 
@@ -345,6 +356,59 @@ def plan_node(state: BriefState) -> dict:
     STATS["node_timings"]["plan"] = round(time.time() - t0, 2)
     log.info("plan 生成查询: %s", queries)
     return {"queries": queries}
+
+
+# 技能注册表：main() 中按 --skills 初始化；为 None 表示技能层未启用
+REGISTRY = None
+
+
+def skill_select_node(state: BriefState) -> dict:
+    """节点2：技能路由 —— 仅凭「技能目录」（元信息）挑技能，再按需加载其正文。
+
+    这是渐进式披露的核心：目录常驻上下文，技能正文只在被选中时才读入。
+    eager 模式下正文已在启动时全部装好，此处仍执行同样的路由（保证对照公平），
+    但注入的是**全量**正文 —— 用于实测「启动全量 vs 运行时按需」的上下文成本差异。
+    """
+    t0 = time.time()
+    if REGISTRY is None or REGISTRY.mode == "off" or not REGISTRY.skills:
+        STATS["node_timings"]["skill_select"] = round(time.time() - t0, 2)
+        log.info("skill_select 跳过（技能层未启用或无技能）")
+        return {"skills_used": [], "skill_instructions": ""}
+
+    chosen: list[str] = []
+    try:
+        resp = llm.invoke(
+            "你是技能路由器。下面是可用技能目录（仅元信息，正文未加载）。\n"
+            "请根据主题选出最相关的技能，最多 3 个。\n"
+            "只输出技能名，每行一个，不要编号与解释；没有合适的就输出 NONE。\n\n"
+            f"{REGISTRY.catalog_text()}\n\n主题：“{state['topic']}”"
+        )
+        record_usage(resp)
+        raw = (resp.content or "").strip()
+        log.info("技能路由原始输出: %s", raw.replace("\n", " | ")[:200])
+        # 容错解析：大小写不敏感，允许被引号/括号/编号/中文注释包裹
+        if raw and raw.upper() != "NONE":
+            low = raw.lower()
+            for name in REGISTRY.skills:
+                if re.search(rf"(?<![a-z0-9\-]){re.escape(name)}(?![a-z0-9\-])", low) \
+                        and name not in chosen:
+                    chosen.append(name)
+            chosen = chosen[:3]
+    except Exception as e:
+        STATS["errors"].append(f"技能路由失败: {type(e).__name__}: {e}")
+        log.warning("技能路由失败，降级为不注入技能: %s", e)
+
+    if REGISTRY.mode == "lazy":
+        for n in chosen:
+            REGISTRY.load(n)                    # ← 按需加载正文（渐进式披露第二级）
+        instr = REGISTRY.instructions(chosen)
+    else:                                        # eager：全量正文已就绪
+        instr = REGISTRY.instructions()
+
+    STATS["node_timings"]["skill_select"] = round(time.time() - t0, 2)
+    log.info("skill_select 选中 %s | 注入正文 %d 字符（mode=%s）",
+             chosen, len(instr), REGISTRY.mode)
+    return {"skills_used": chosen, "skill_instructions": instr}
 
 
 def search_node(state: BriefState) -> dict:
@@ -430,6 +494,9 @@ def verify_node(state: BriefState) -> dict:
         f"并对每条事实标注“多来源一致 / 单一来源 / 需进一步核实”，说明核验依据。\n\n"
         f"【检索摘要】\n{results[:1500]}\n\n【网页正文摘录】\n{fetched[:1500]}"
     )
+    skill_txt = state.get("skill_instructions") or ""      # 渐进式披露：注入已加载技能
+    if skill_txt:
+        prompt = f"【已加载技能】\n{skill_txt}\n\n{prompt}"
     resp = llm.invoke(prompt)
     record_usage(resp)
     STATS["node_timings"]["verify"] = round(time.time() - t0, 2)
@@ -479,6 +546,9 @@ def brief_node(state: BriefState) -> dict:
         f"3) 末尾附“来源”小节，列出以下链接；\n4) 只陈述已核验的事实，不确定的标注“待核实”。\n\n"
         f"【核验事实】\n{facts}\n\n【可用来源链接】\n{srcs}"
     )
+    skill_txt = state.get("skill_instructions") or ""      # 渐进式披露：注入已加载技能
+    if skill_txt:
+        prompt = f"【已加载技能】\n{skill_txt}\n\n{prompt}"
     resp = llm.invoke(prompt)
     record_usage(resp)
     brief = resp.content
@@ -516,12 +586,14 @@ def brief_node(state: BriefState) -> dict:
 def build_graph():
     g = StateGraph(BriefState)
     g.add_node("plan", plan_node)
+    g.add_node("skill_select", skill_select_node)
     g.add_node("search", search_node)
     g.add_node("fetch", fetch_node)
     g.add_node("verify", verify_node)
     g.add_node("brief", brief_node)
     g.add_edge(START, "plan")
-    g.add_edge("plan", "search")
+    g.add_edge("plan", "skill_select")
+    g.add_edge("skill_select", "search")
     g.add_edge("search", "fetch")
     g.add_edge("fetch", "verify")
     g.add_edge("verify", "brief")
@@ -532,12 +604,40 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
+def _parse_args() -> tuple[str, str]:
+    """解析命令行：位置参数为主题；`--skills=lazy|eager|off` 选择技能加载模式。"""
+    topic, mode = "大模型上下文工程", "lazy"
+    for a in sys.argv[1:]:
+        if a.startswith("--skills="):
+            mode = a.split("=", 1)[1].strip().lower()
+        elif not a.startswith("-"):
+            topic = a
+    if mode not in ("lazy", "eager", "off"):
+        mode = "lazy"
+    return topic, mode
+
+
 def main() -> None:
+    global REGISTRY
     setup_logging()          # 延迟挂载日志 handler：仅 import 时不产生空日志文件
-    topic = sys.argv[1] if len(sys.argv) > 1 else "大模型上下文工程"
+    topic, skill_mode = _parse_args()
+
+    # 技能层第一级：启动时只扫描元信息（frontmatter），技能正文不驻留上下文
+    if SKILLS_AVAILABLE:
+        REGISTRY = SkillRegistry(mode=skill_mode).scan()
+        if skill_mode == "eager":
+            REGISTRY.load_all()              # 对照组：启动时装入全部技能正文
+        _sk = REGISTRY.stats()
+        log.info("技能层 mode=%s | 技能 %d 个 | 目录 %d token | 扫描 %.2fms%s",
+                 REGISTRY.mode, _sk["skill_count"], _sk["catalog_tokens"], _sk["scan_ms"],
+                 f" | 预加载全部正文 {_sk['all_body_tokens']} token / {_sk['preload_ms']}ms"
+                 if skill_mode == "eager" else "")
+    else:
+        log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
+
     log.info("========== LangGraph 统一任务实测开始 ==========")
-    log.info("主题=%s | 模型=%s | RUN_ID=%s", topic,
-             os.environ.get("DEEPSEEK_MODEL"), RUN_ID)
+    log.info("主题=%s | 模型=%s | 技能模式=%s | RUN_ID=%s", topic,
+             os.environ.get("DEEPSEEK_MODEL"), skill_mode, RUN_ID)
 
     # 用计算器工具做一次演示调用（工具调用稳定性 + 参数校验测试）
     log.info("演示 calculator: 2**10 + 3*7 = %s",
@@ -564,6 +664,8 @@ def main() -> None:
         "tool_calls": STATS["tool_calls"],
         "search_backend": STATS["search_backend"],
         "fetch_backend": STATS["fetch_backend"],
+        "skills": (REGISTRY.stats() if REGISTRY else {}),
+        "skills_used": list(final.get("skills_used", [])),
         "llm_calls": STATS["llm_calls"],
         "token_input": STATS["token_input"],
         "token_output": STATS["token_output"],
@@ -573,6 +675,11 @@ def main() -> None:
     log.info("总耗时 %.2fs | LLM调用 %d 次 | token(in=%d, out=%d, 总=%d)",
              total, STATS["llm_calls"], STATS["token_input"],
              STATS["token_output"], STATS["token_input"] + STATS["token_output"])
+    if REGISTRY:
+        _sk = REGISTRY.stats()
+        log.info("技能层汇总: mode=%s | 加载 %d/%d 个技能 | 注入正文 %d token | 目录 %d token",
+                 _sk["mode"], _sk["loaded_count"], _sk["skill_count"],
+                 _sk["loaded_body_tokens"], _sk["catalog_tokens"])
     if all_errors:
         log.warning("故障记录: %s", all_errors)
 
