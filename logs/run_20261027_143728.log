@@ -1,0 +1,18 @@
+14:37:28 | INFO    | 技能层 mode=eager | 技能 5 个 | 目录 311 token | 扫描 11.09ms | 预加载全部正文 1800 token / 1.61ms
+14:37:28 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+14:37:28 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-v4-pro | 技能模式=eager | RUN_ID=20261027_143728
+14:37:28 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+14:37:39 | INFO    | plan 生成查询: ['大模型上下文工程', '上下文工程 大语言模型', 'LLM context engineering']
+14:37:48 | INFO    | 技能路由原始输出: search-strategy | source-triage | fact-cross-verify
+14:37:48 | INFO    | skill_select 选中 ['fact-cross-verify', 'search-strategy', 'source-triage'] | 注入正文 2091 字符（mode=eager）
+14:37:49 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.22s)
+14:37:51 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+14:37:56 | INFO    | fetch 完成: 读取 3 个网页
+14:42:28 | INFO    | verify 完成: 核验结论 698 字符
+14:46:00 | INFO    | 简报定稿：正文 375 字（≤500），来源 225 字不计入，压缩 0 次
+14:46:00 | INFO    | brief 完成: 全文 659 字符 | 正文 375 字 | 来源 225 字
+14:46:00 | INFO    | 总耗时 512.13s | LLM调用 4 次 | token(in=5126, out=18483, 总=23609)
+14:46:00 | INFO    | 技能层汇总: mode=eager | 加载 5/5 个技能 | 注入正文 1800 token | 目录 311 token
+14:46:00 | INFO    | 简报已保存: output\brief_20261027_143728.md
+14:46:00 | INFO    | 统计已保存: output\stats_20261027_143728.json
+14:46:00 | INFO    | ========== 实测结束 ==========

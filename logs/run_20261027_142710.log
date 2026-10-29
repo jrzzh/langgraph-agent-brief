@@ -1,0 +1,17 @@
+14:27:10 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 311 token | 扫描 10.99ms
+14:27:10 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+14:27:10 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-v4-pro | 技能模式=lazy | RUN_ID=20261027_142710
+14:27:10 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+14:27:17 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM上下文工程', 'context engineering LLM']
+14:27:28 | INFO    | skill_select 选中 [] | 注入正文 0 字符（mode=lazy）
+14:27:30 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (2.38s)
+14:27:32 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+14:27:33 | INFO    | fetch 完成: 读取 3 个网页
+14:28:47 | INFO    | verify 完成: 核验结论 1027 字符
+14:29:45 | INFO    | 简报定稿：正文 402 字（≤500），来源 674 字不计入，压缩 0 次
+14:29:45 | INFO    | brief 完成: 全文 1145 字符 | 正文 402 字 | 来源 674 字
+14:29:45 | INFO    | 总耗时 155.12s | LLM调用 4 次 | token(in=2475, out=9163, 总=11638)
+14:29:45 | INFO    | 技能层汇总: mode=lazy | 加载 0/5 个技能 | 注入正文 0 token | 目录 311 token
+14:29:45 | INFO    | 简报已保存: output\brief_20261027_142710.md
+14:29:45 | INFO    | 统计已保存: output\stats_20261027_142710.json
+14:29:45 | INFO    | ========== 实测结束 ==========

@@ -11,8 +11,12 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.2",
     "requests>=2.34.2",
     "lxml>=6.1.3",
+    "deepagents>=0.7.32",
 ]
 
 [tool.uv]
 # 受限环境将缓存/索引放在项目内，避免写入用户全局缓存被拒
 cache-dir = ".uv-cache"
+
+[[tool.uv.index]]
+url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
