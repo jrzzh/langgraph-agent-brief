@@ -1,0 +1,18 @@
+13:49:29 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 311 token | 扫描 10.55ms
+13:49:29 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:49:29 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-v4-pro | 技能模式=lazy | RUN_ID=20261029_134929
+13:49:29 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:49:36 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM上下文工程', 'Context Engineering']
+13:49:48 | INFO    | 技能路由原始输出: search-strategy | source-triage | fact-cross-verify
+13:49:48 | INFO    | skill_select 选中 ['fact-cross-verify', 'search-strategy', 'source-triage'] | 注入正文 1358 字符（mode=lazy）
+13:49:52 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (3.42s)
+13:49:54 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+13:49:58 | INFO    | fetch 完成: 读取 3 个网页
+13:51:13 | INFO    | verify 完成: 核验结论 574 字符
+13:51:57 | INFO    | 简报定稿：正文 259 字（≤500），来源 523 字不计入，压缩 0 次
+13:51:57 | INFO    | brief 完成: 全文 842 字符 | 正文 259 字 | 来源 523 字
+13:51:57 | INFO    | 总耗时 147.54s | LLM调用 4 次 | token(in=4201, out=9382, 总=13583)
+13:51:57 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1213 token | 目录 311 token
+13:51:57 | INFO    | 简报已保存: output\brief_20261029_134929.md
+13:51:57 | INFO    | 统计已保存: output\stats_20261029_134929.json
+13:51:57 | INFO    | ========== 实测结束 ==========

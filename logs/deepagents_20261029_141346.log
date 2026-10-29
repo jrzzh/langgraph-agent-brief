@@ -1,0 +1,75 @@
+========== deepagents 原生 Skills 启动 RUN_ID=20261029_141346 ==========
+主题=大模型上下文工程 | 模型=deepseek-v4-pro | 技能源=/skills/
+
+==============================================================================
+deepagents 原生 Skills 运行日志
+RUN_ID  : 20261029_141346
+主题    : 大模型上下文工程
+模型    : deepseek-v4-pro
+技能源  : /skills/
+backend : FilesystemBackend(virtual_mode=True，根目录=项目根)
+agent 构建耗时: 0.09s（含 SkillsMiddleware 扫描技能）
+==============================================================================
+
+【技能加载】由 read_file 工具调用解析
+  1. citation-format          /skills/citation-format/SKILL.md             0.0s
+  2. brief-writing            /skills/brief-writing/SKILL.md               0.0s
+  3. fact-cross-verify        /skills/fact-cross-verify/SKILL.md           0.0s
+  4. source-triage            /skills/source-triage/SKILL.md               0.0s
+  5. search-strategy          /skills/search-strategy/SKILL.md             0.0s
+  合计加载 5/5 个技能（全部）
+
+【步骤耗时分解】（每步 = 1 次 LLM 调用 + 该步产出的工具调用）
+步骤      LLM(s)     工具阶段(s)       输入tok       输出tok                                             该步工具
+  --------------------------------------------------------------------------------------------
+1       6.61       0.01          3819        467                                        read_file×4
+2       5.74       4.21          5915        387                                       web_search×4
+3       7.94       1.32          11222       424                           web_fetch×1、web_search×2
+4       15.56      1.49          14715       936                                       web_search×2
+5       390.26     0.00          19072       14847                                      —（直接给出最终回答）
+  小计：LLM 426.11s + 工具阶段 7.03s
+
+  中间件耗时（技能扫描/注入，远小于 LLM）：
+    SkillsMiddleware.before_agent          1 次  0.010s
+    SkillsMiddleware.before_model          5 次  0.000s
+    _ParentNotifierMiddleware.after_agent  1 次  0.000s
+    PatchToolCallsMiddleware.before_agent  1 次  0.000s
+
+【LLM 调用明细】
+#     开始(s)      耗时(s)      输入token          输出token
+  ------------------------------------------------
+1     0.02       6.61       3819                 467
+2     6.64       5.74       5915                 387
+3     16.59      7.94       11222                424
+4     25.86      15.56      14715                936
+5     42.91      390.26     19072              14847
+
+【工具调用明细】
+#     开始(s)      耗时(s)      工具            输出                                           参数摘要
+  ------------------------------------------------------------------------------------
+1     6.63       0.00       read_file     570      {'file_path': '/skills/citation-format/S
+2     6.63       0.00       read_file     660      {'file_path': '/skills/brief-writing/SKI
+3     6.63       0.00       read_file     721      {'file_path': '/skills/fact-cross-verify
+4     6.63       0.00       read_file     717      {'file_path': '/skills/source-triage/SKI
+5     6.64       0.00       read_file     683      {'file_path': '/skills/search-strategy/S
+6     12.39      3.59       web_search    3012         {'query': 'context engineering LLM'}
+7     12.38      3.88       web_search    3093     {'query': 'context engineering vs prompt
+8     12.38      3.89       web_search    1170                       {'query': '大模型 上下文工程'}
+9     12.39      4.21       web_search    4846     {'query': 'LLM context window management
+10    24.54      1.08       web_fetch     3093     {'url': 'https://www.anthropic.com/engin
+11    24.54      1.27       web_search    3230     {'query': 'context window working memory
+12    24.54      1.32       web_search    2654     {'query': 'Anthropic effective context e
+13    41.42      1.30       web_search    3629     {'query': '"Effective context engineerin
+14    41.42      1.48       web_search    4411     {'query': 'Lost in the Middle Liu 2023 l
+
+【汇总】
+  墙钟总耗时 : 433.17s（含 agent 构建 0.09s）
+  LLM 调用   : 5 次  426.11s  (98.4%)  token in=54743 out=17061 总=71804
+  工具调用   : 14 次（顶层）  22.02s  {'read_file': 5, 'web_search': 8, 'web_fetch': 1}
+  嵌套调用   : 9 次  {'search_pro': 8, 'web_fetch': 1}（web_search/web_fetch 内部的 MCP 工具，已排除避免重复计数）
+  技能加载   : 5/5 个  ['citation-format', 'brief-writing', 'fact-cross-verify', 'source-triage', 'search-strategy']
+  简报字数   : 1381
+==============================================================================
+简报已保存: output\brief_deepagents_20261029_141346.md
+统计已保存: output\stats_deepagents_20261029_141346.json
+日志已保存: logs\deepagents_20261029_141346.log

@@ -1,0 +1,79 @@
+{
+  "run_id": "20261029_134929",
+  "topic": "大模型上下文工程",
+  "total_elapsed_s": 147.54,
+  "node_timings": {
+    "plan": 7.13,
+    "skill_select": 11.8,
+    "search": 6.07,
+    "fetch": 3.94,
+    "verify": 75.05,
+    "brief": 43.54
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "skills": {
+    "mode": "lazy",
+    "skill_count": 5,
+    "skill_names": [
+      "brief-writing",
+      "citation-format",
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "catalog_chars": 445,
+    "catalog_tokens": 311,
+    "loaded": [
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "loaded_count": 3,
+    "loaded_body_chars": 1285,
+    "loaded_body_tokens": 1213,
+    "all_body_chars": 1970,
+    "all_body_tokens": 1800,
+    "scan_ms": 10.55,
+    "preload_ms": 0.0,
+    "loaded_detail": {
+      "fact-cross-verify": {
+        "chars": 437,
+        "tokens": 434,
+        "load_ms": 0.38
+      },
+      "search-strategy": {
+        "chars": 408,
+        "tokens": 376,
+        "load_ms": 0.22
+      },
+      "source-triage": {
+        "chars": 440,
+        "tokens": 403,
+        "load_ms": 0.16
+      }
+    },
+    "token_estimator": "tiktoken/cl100k_base",
+    "estimator_init_ms": 67.56
+  },
+  "skills_used": [
+    "fact-cross-verify",
+    "search-strategy",
+    "source-triage"
+  ],
+  "llm_calls": 4,
+  "token_input": 4201,
+  "token_output": 9382,
+  "token_total": 13583,
+  "errors": []
+}

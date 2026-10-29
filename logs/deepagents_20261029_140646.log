@@ -1,0 +1,85 @@
+========== deepagents 原生 Skills 启动 RUN_ID=20261029_140646 ==========
+主题=大模型上下文工程 | 模型=deepseek-v4-pro | 技能源=/skills/
+
+==============================================================================
+deepagents 原生 Skills 运行日志
+RUN_ID  : 20261029_140646
+主题    : 大模型上下文工程
+模型    : deepseek-v4-pro
+技能源  : /skills/
+backend : FilesystemBackend(virtual_mode=True，根目录=项目根)
+agent 构建耗时: 0.09s（含 SkillsMiddleware 扫描技能）
+==============================================================================
+
+【技能加载】由 read_file 工具调用解析
+  1. source-triage            /skills/source-triage/SKILL.md               0.0s
+  2. search-strategy          /skills/search-strategy/SKILL.md             0.0s
+  3. fact-cross-verify        /skills/fact-cross-verify/SKILL.md           0.0s
+  4. citation-format          /skills/citation-format/SKILL.md             0.0s
+  5. brief-writing            /skills/brief-writing/SKILL.md               0.0s
+  合计加载 5/5 个技能（全部）
+
+【图节点耗时】（LangGraph 实际执行的节点，按累计时间降序）
+节点                                    次数      累计(s)             占比
+  --------------------------------------------------------------
+model                                 7       115.63         91.4%
+tools                                 17      24.06          19.0%
+SkillsMiddleware.before_agent         1       0.01            0.0%
+SkillsMiddleware.before_model         7       0.00            0.0%
+PatchToolCallsMiddleware.before_agent  1       0.00            0.0%
+_ParentNotifierMiddleware.after_agent  1       0.00            0.0%
+
+【LLM 调用明细】
+#     开始(s)      耗时(s)      输入token          输出token
+  ------------------------------------------------
+1     0.02       6.66       3819                 531
+2     6.69       5.07       5979                 335
+3     15.01      7.54       10433                534
+4     23.73      15.08      13050                883
+5     40.18      41.63      17613               2688
+6     84.17      9.84       21284                655
+7     96.67      29.79      22624               2361
+
+【工具调用明细】
+#     开始(s)      耗时(s)      工具            输出                                           参数摘要
+  ------------------------------------------------------------------------------------
+1     6.68       0.00       read_file     717      {'file_path': '/skills/source-triage/SKI
+2     6.68       0.00       read_file     683      {'file_path': '/skills/search-strategy/S
+3     6.69       0.00       read_file     721      {'file_path': '/skills/fact-cross-verify
+4     6.69       0.00       read_file     570      {'file_path': '/skills/citation-format/S
+5     6.69       0.00       read_file     660      {'file_path': '/skills/brief-writing/SKI
+6     13.23      1.26       search_pro    8393         {'query': 'LLM context engineering'}
+7     11.76      2.73       web_search    3012         {'query': 'LLM context engineering'}
+8     13.22      1.36       search_pro    9395     {'query': 'context engineering Anthropic
+9     11.76      2.83       web_search    3011     {'query': 'context engineering Anthropic
+10    13.23      1.39       search_pro    9264     {'query': 'context window management LLM
+11    11.76      2.85       web_search    3607     {'query': 'context window management LLM
+12    13.23      1.78       search_pro    5200                       {'query': '大模型 上下文工程'}
+13    11.76      3.25       web_search    1170                       {'query': '大模型 上下文工程'}
+14    22.56      0.93       web_fetch     21753    {'url': 'https://www.anthropic.com/engin
+15    22.55      0.94       web_fetch     3093     {'url': 'https://www.anthropic.com/engin
+16    22.56      1.15       web_fetch     3575     {'url': 'https://developer.baidu.com/art
+17    22.55      1.15       web_fetch     3179     {'url': 'https://developer.baidu.com/art
+18    22.56      1.18       web_fetch     205      {'url': 'https://view.inews.qq.com/wxn/2
+19    22.55      1.18       web_fetch     75       {'url': 'https://view.inews.qq.com/wxn/2
+20    38.82      1.26       search_pro    11071    {'query': 'Lost in the Middle language m
+21    38.82      1.26       web_search    4135     {'query': 'Lost in the Middle language m
+22    38.82      1.35       search_pro    10062    {'query': 'Anthropic context rot perform
+23    38.82      1.35       web_search    3689     {'query': 'Anthropic context rot perform
+24    81.81      1.45       search_pro    9642     {'query': 'Chroma Context Rot report 202
+25    81.81      1.45       web_search    2703     {'query': 'Chroma Context Rot report 202
+26    81.81      2.36       web_fetch     205      {'url': 'https://arxiv.org/abs/2307.0317
+27    81.81      2.36       web_fetch     75       {'url': 'https://arxiv.org/abs/2307.0317
+28    94.01      2.66       web_fetch     55886    {'url': 'https://www.trychroma.com/resea
+29    94.01      2.66       web_fetch     3126     {'url': 'https://www.trychroma.com/resea
+
+【汇总】
+  墙钟总耗时 : 126.46s（含 agent 构建 0.09s）
+  LLM 调用   : 7 次  115.61s  (91.4%)  token in=94802 out=7987 总=102789
+  工具调用   : 29 次  42.14s  (33.3%)  {'read_file': 5, 'search_pro': 7, 'web_search': 7, 'web_fetch': 10}
+  技能加载   : 5/5 个  ['source-triage', 'search-strategy', 'fact-cross-verify', 'citation-format', 'brief-writing']
+  简报字数   : 948
+==============================================================================
+简报已保存: output\brief_deepagents_20261029_140646.md
+统计已保存: output\stats_deepagents_20261029_140646.json
+日志已保存: logs\deepagents_20261029_140646.log
