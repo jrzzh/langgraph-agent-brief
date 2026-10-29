@@ -33,6 +33,9 @@ from dataclasses import dataclass, field
 
 SKILLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
 
+# 项目根目录（skills/ 的上级），用于放置运行期缓存
+PROJECT_DIR = os.path.dirname(SKILLS_DIR)
+
 # frontmatter：以 --- 包裹的头部 + 其余正文
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.S)
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -55,6 +58,16 @@ def get_encoder():
     if os.environ.get("SKILL_TOKEN_ESTIMATOR", "").strip().lower() == "heuristic":
         _ENCODER, _ENCODER_NAME = None, "heuristic(cjk*0.7+other/4)"
         return _ENCODER, _ENCODER_NAME
+    # tiktoken 默认缓存到 tempfile.gettempdir()；若 TEMP/TMP 不可用（如某些 IDE 运行环境），
+    # Python 会退回到当前工作目录，在仓库根生成 1.6MB 的 data-gym-cache/。
+    # 这里显式固定到项目内 .cache/tiktoken（已在 .gitignore 忽略），保证位置可预期。
+    if not os.environ.get("TIKTOKEN_CACHE_DIR"):
+        _cache_dir = os.path.join(PROJECT_DIR, ".cache", "tiktoken")
+        try:
+            os.makedirs(_cache_dir, exist_ok=True)
+            os.environ["TIKTOKEN_CACHE_DIR"] = _cache_dir
+        except OSError:
+            pass  # 目录不可写时退回 tiktoken 默认行为，不影响功能
     t0 = time.time()
     try:
         import tiktoken
