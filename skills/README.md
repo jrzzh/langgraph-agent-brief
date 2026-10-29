@@ -162,8 +162,9 @@ agent = create_deep_agent(model=llm, tools=TOOLS, backend=backend, skills=["/ski
    首轮固定开销就有 3 819 token（技能系统提示 + 5 个技能描述 + 文件系统工具 schema）。
    即「上下文工程」与「只增不减的上下文日志」之别。
 3. **技能加载路径的差异：由谁做选择**。
-   自建用**一次被强约束的路由调用**（`skill_select`，prompt 限定输出技能名列表），
-   三次 `lazy` 运行稳定选出同一组 3 个（`fact-cross-verify` / `search-strategy` / `source-triage`）；
+   自建用**一次被强约束的路由调用**（`skill_select`，prompt 限定输出技能名列表）；
+   `lazy` 共 3 次运行——首次因路由解析缺陷未命中任何技能（已修，见 `03-运行日志.md` §8.1），
+   修复后两次均稳定选中同一组 3 个（`fact-cross-verify` / `search-strategy` / `source-triage`）；
    代价是多一次 LLM 调用（实测 11.8~26.9 s），风险是可能漏选
    （未选 `brief-writing` / `citation-format`）。
    deepagents 由**模型在主循环里自主 `read_file`**，四次运行全部读满 5/5，不漏选；
