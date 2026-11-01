@@ -103,8 +103,6 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | `agent_deepagents.py` | 统一任务的 **deepagents 原生 Skills** 实现（三级渐进式披露） |
 | `skill_loader.py` | 自建 Skills 运行时（对照实现）：注册表 + 按需加载 + 计量 |
 | `skills/` | 技能单元目录（每个技能一个 `SKILL.md`，符合 Agent Skills 规范） |
-| `mcp_server.py` | 本地 MCP Server（FastMCP），示教用 |
-| `mcp_demo.py` | 经 `langchain-mcp-adapters` 把 MCP 工具接入 LangGraph |
 | `smoke_test.py` | 环境导入 / 模型连通性 / 检索可用性冒烟测试 |
 | `logs/` | 运行日志 |
 | `output/` | 技术简报与统计 JSON |
@@ -114,7 +112,7 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | 项 | 值 |
 | --- | --- |
 | 框架 | LangGraph 1.2.16 + LangChain 1.4.7（langchain-core 1.7.0） |
-| 模型 | DeepSeek（OpenAI 兼容接口，`deepseek-v4-pro`） |
+| 模型 | DeepSeek（OpenAI 兼容接口，`deepseek-flash`） |
 | MCP | langchain-mcp-adapters 0.3.2（Streamable HTTP） |
 | Skills | deepagents 0.7.32（Agent Skills 规范，三级渐进式披露） |
 | 环境管理 | uv（`pyproject.toml` + `uv.lock`） |
@@ -136,9 +134,9 @@ uv run python agent_brief.py "大模型上下文工程"                       # 
 uv run python agent_brief.py "大模型上下文工程" --skills=eager        # ① 对照：启动时全量加载技能
 uv run python agent_brief.py "大模型上下文工程" --skills=off          # ① 基线：不使用技能
 
-# 4) 本地 MCP Server 示教（先起 server，再用另一终端跑 client）
-uv run python mcp_server.py --transport streamable-http
-uv run python mcp_demo.py
+# 4) 图形界面（Skills 实现二选一：自建 skill_loader / 官方 deepagents，可看运行日志）
+uv run streamlit run streamlit_app.py     # → http://localhost:8501
+start-ui.cmd                              # 或双击启动（Windows）
 ```
 
 产出：

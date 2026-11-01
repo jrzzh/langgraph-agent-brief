@@ -328,88 +328,105 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
     return L
 
 
-def main() -> None:
-    topic = sys.argv[1] if len(sys.argv) > 1 else "大模型上下文工程"
+def run_task(topic: str = "大模型上下文工程") -> dict:
+    """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
+
+    同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
+    """
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(LOG_DIR, exist_ok=True)
 
     log_path = os.path.join(LOG_DIR, f"deepagents_{run_id}.log")
-    log_fh = open(log_path, "w", encoding="utf-8")
+    captured: list[str] = []
 
-    def emit(lines) -> None:
-        for ln in lines:
-            print(ln, flush=True)
-            log_fh.write(ln + "\n")
-        log_fh.flush()
+    with open(log_path, "w", encoding="utf-8") as log_fh:
 
-    emit([f"========== deepagents 原生 Skills 启动 RUN_ID={run_id} ==========",
-          f"主题={topic} | 模型={os.environ.get('DEEPSEEK_MODEL')} | 技能源={SKILLS_SOURCE}"])
+        def emit(lines) -> None:
+            for ln in lines:
+                print(ln, flush=True)
+                captured.append(ln)
+                log_fh.write(ln + "\n")
+            log_fh.flush()
 
-    # ---- 构建 ----
-    t_build = time.time()
-    backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
-    agent = create_deep_agent(
-        model=llm,
-        tools=TOOLS,
-        backend=backend,
-        skills=[SKILLS_SOURCE],
-    )
-    build_s = round(time.time() - t_build, 2)
+        emit([f"========== deepagents 原生 Skills 启动 RUN_ID={run_id} ==========",
+              f"主题={topic} | 模型={os.environ.get('DEEPSEEK_MODEL')} | 技能源={SKILLS_SOURCE}"])
 
-    # ---- 执行（回调采集）----
-    handler = TimingHandler()
-    handler.t0 = time.time()
-    t0 = time.time()
-    try:
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": TASK_TEMPLATE.format(topic=topic)}]},
-            config={"callbacks": [handler]},
+        # ---- 构建 ----
+        t_build = time.time()
+        backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
+        agent = create_deep_agent(
+            model=llm,
+            tools=TOOLS,
+            backend=backend,
+            skills=[SKILLS_SOURCE],
         )
-        wall_s = round(time.time() - t0, 2)
-    except Exception as e:
-        emit([f"❌ 执行失败: {type(e).__name__}: {e}"])
-        log_fh.close()
-        raise
+        build_s = round(time.time() - t_build, 2)
 
-    msgs = result.get("messages", []) or []
-    final = ""
-    for m in reversed(msgs):
-        c = getattr(m, "content", None)
-        if isinstance(c, str) and c.strip():
-            final = c
-            break
+        # ---- 执行（回调采集）----
+        handler = TimingHandler()
+        handler.t0 = time.time()
+        t0 = time.time()
+        try:
+            result = agent.invoke(
+                {"messages": [{"role": "user", "content": TASK_TEMPLATE.format(topic=topic)}]},
+                config={"callbacks": [handler]},
+            )
+            wall_s = round(time.time() - t0, 2)
+        except Exception as e:
+            emit([f"❌ 执行失败: {type(e).__name__}: {e}"])
+            raise
 
-    s = handler.summary(wall_s, build_s)
-    emit([""])
-    emit(build_report(handler, s, run_id, topic, len(final)))
+        msgs = result.get("messages", []) or []
+        final = ""
+        for m in reversed(msgs):
+            c = getattr(m, "content", None)
+            if isinstance(c, str) and c.strip():
+                final = c
+                break
 
-    # ---- 落盘 ----
-    brief_path = os.path.join(OUT_DIR, f"brief_deepagents_{run_id}.md")
-    with open(brief_path, "w", encoding="utf-8") as f:
-        f.write(final)
-    stat = {
-        "run_id": run_id,
-        "impl": "deepagents(create_deep_agent + SkillsMiddleware)",
-        "topic": topic,
-        "model": os.environ.get("DEEPSEEK_MODEL"),
-        "skills_source": SKILLS_SOURCE,
-        "skills_disclosure": "3 级：metadata -> SKILL.md(read_file) -> resources",
-        "messages": len(msgs),
-        **s,
-        "brief_chars": len(final),
-        "log_file": _rel(log_path),
+        s = handler.summary(wall_s, build_s)
+        emit([""])
+        emit(build_report(handler, s, run_id, topic, len(final)))
+
+        # ---- 落盘 ----
+        brief_path = os.path.join(OUT_DIR, f"brief_deepagents_{run_id}.md")
+        with open(brief_path, "w", encoding="utf-8") as f:
+            f.write(final)
+        stat = {
+            "run_id": run_id,
+            "impl": "deepagents(create_deep_agent + SkillsMiddleware)",
+            "topic": topic,
+            "model": os.environ.get("DEEPSEEK_MODEL"),
+            "skills_source": SKILLS_SOURCE,
+            "skills_disclosure": "3 级：metadata -> SKILL.md(read_file) -> resources",
+            "messages": len(msgs),
+            **s,
+            "brief_chars": len(final),
+            "log_file": _rel(log_path),
+        }
+        stat_path = os.path.join(OUT_DIR, f"stats_deepagents_{run_id}.json")
+        with open(stat_path, "w", encoding="utf-8") as f:
+            json.dump(stat, f, ensure_ascii=False, indent=2)
+
+        emit([f"简报已保存: {_rel(brief_path)}",
+              f"统计已保存: {_rel(stat_path)}",
+              f"日志已保存: {_rel(log_path)}"])
+
+    return {
+        **stat,
+        "brief": final,
+        "brief_path": _rel(brief_path),
+        "stats_path": _rel(stat_path),
+        "log_path": _rel(log_path),
+        "log_text": "\n".join(captured),
     }
-    stat_path = os.path.join(OUT_DIR, f"stats_deepagents_{run_id}.json")
-    with open(stat_path, "w", encoding="utf-8") as f:
-        json.dump(stat, f, ensure_ascii=False, indent=2)
 
-    emit([f"简报已保存: {_rel(brief_path)}",
-          f"统计已保存: {_rel(stat_path)}",
-          f"日志已保存: {_rel(log_path)}"])
-    log_fh.close()
 
+def main() -> None:
+    topic = sys.argv[1] if len(sys.argv) > 1 else "大模型上下文工程"
+    summary = run_task(topic)
     print("\n===== 最终简报 =====\n")
-    print(final)
+    print(summary.get("brief", ""))
 
 
 if __name__ == "__main__":

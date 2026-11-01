@@ -3,7 +3,7 @@
 LangGraph 统一任务实测脚本
 ================================================================
 框架    : LangGraph 1.2.16  +  LangChain 1.4.6
-模型    : DeepSeek (deepseek-v4-pro)
+模型    : DeepSeek (deepseek-flash)
 统一任务: 联网检索资料 → 提取关键信息 → 事实交叉核验 → 生成 500 字以内
           带来源链接的 Markdown 技术简报
 统一工具: 联网搜索 + 网页读取（均走千问 MCP，失败自动降级本地实现） + 计算器
@@ -62,6 +62,32 @@ def _rel(path: str) -> str:
     except ValueError:          # 跨盘符等无法求相对路径的情况
         return os.path.basename(path)
 
+
+def _pad(text: str, width: int) -> str:
+    """按显示宽度补空格（中文字符占 2 列），让日志表格对齐。"""
+    shown = sum(2 if ord(ch) > 0x2E80 else 1 for ch in text)
+    return text + " " * max(0, width - shown)
+
+
+def _log_timing_table(total: float) -> None:
+    """把各步骤耗时打印成表格：秒数 / 占比 / 条形，一眼看出瓶颈在哪。"""
+    timings = STATS.get("node_timings") or {}
+    if not timings:
+        return
+    rows = sorted(timings.items(), key=lambda kv: kv[1], reverse=True)
+    node_sum = round(sum(v for _, v in rows), 2)
+    log.info("---------- 各步骤耗时 ----------")
+    for name, sec in rows:
+        pct = (sec / total * 100) if total else 0.0
+        bar = "█" * min(30, max(1, int(pct / 3)))
+        log.info("  %s %7.2fs  %5.1f%%  %s", _pad(name, 14), sec, pct, bar)
+    log.info("  %s %7.2fs  %5.1f%%", _pad("节点合计", 14), node_sum,
+             100.0 if not total else node_sum / total * 100)
+    others = round(max(0.0, total - node_sum), 2)
+    log.info("  %s %7.2fs  %5.1f%%", _pad("图外开销", 14), others,
+             0.0 if not total else others / total * 100)
+    log.info("  %s %7.2fs", _pad("总耗时", 14), total)
+
 # ---------------------------------------------------------------------------
 # 日志配置（stdout + 文件，UTF-8）
 # ---------------------------------------------------------------------------
@@ -73,15 +99,23 @@ log.setLevel(logging.DEBUG)
 _handlers_ready = False
 
 
-def setup_logging() -> logging.Logger:
+def setup_logging(force: bool = False) -> logging.Logger:
     """挂载文件与控制台 handler。
 
-    延迟到 main() 中调用，避免"仅 import 模块"时产生 0 字节日志文件。
+    延迟到 main()/run_task() 中调用，避免"仅 import 模块"时产生 0 字节日志文件。
+    ``force=True`` 会先摘掉旧 handler 再重挂——同一进程内多次运行时切到新日志文件
+    （Streamlit UI 会在一次会话里连续跑多次）。
     """
     global _handlers_ready
-    if _handlers_ready:
+    if _handlers_ready and not force:
         return log
     fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(message)s", "%H:%M:%S")
+    for handler in list(log.handlers):        # 先摘旧 handler，避免重复输出
+        log.removeHandler(handler)
+        try:
+            handler.close()
+        except Exception:
+            pass
     fh = logging.FileHandler(LOG_FILE, encoding="utf-8")     # 文件
     fh.setFormatter(fmt)
     log.addHandler(fh)
@@ -105,6 +139,21 @@ STATS = {
     "errors": [],
     "skills": {},
 }
+
+
+def fresh_stats() -> dict:
+    """每次运行重置统计——同一进程内可连续跑多次（Streamlit UI 需要）。"""
+    return {
+        "token_input": 0,
+        "token_output": 0,
+        "llm_calls": 0,
+        "node_timings": {},
+        "tool_calls": {},
+        "search_backend": {"qwen_mcp": 0, "bing_fallback": 0},
+        "fetch_backend": {"qwen_mcp": 0, "local_fallback": 0},
+        "errors": [],
+        "skills": {},
+    }
 
 
 def record_usage(resp) -> None:
@@ -330,7 +379,7 @@ class BriefState(TypedDict):
 # LLM 实例
 # ---------------------------------------------------------------------------
 llm = ChatOpenAI(
-    model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+    model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
     api_key=os.environ["DEEPSEEK_API_KEY"],
     base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     temperature=0.3,
@@ -354,7 +403,8 @@ def plan_node(state: BriefState) -> dict:
     if not queries:
         queries = [topic]
     STATS["node_timings"]["plan"] = round(time.time() - t0, 2)
-    log.info("plan 生成查询: %s", queries)
+    log.info("plan 完成 | 生成查询 %s | 耗时 %.2fs",
+             queries, STATS["node_timings"]["plan"])
     return {"queries": queries}
 
 
@@ -372,7 +422,8 @@ def skill_select_node(state: BriefState) -> dict:
     t0 = time.time()
     if REGISTRY is None or REGISTRY.mode == "off" or not REGISTRY.skills:
         STATS["node_timings"]["skill_select"] = round(time.time() - t0, 2)
-        log.info("skill_select 跳过（技能层未启用或无技能）")
+        log.info("skill_select 跳过（技能层未启用或无技能） | 耗时 %.2fs",
+                 STATS["node_timings"]["skill_select"])
         return {"skills_used": [], "skill_instructions": ""}
 
     chosen: list[str] = []
@@ -406,8 +457,8 @@ def skill_select_node(state: BriefState) -> dict:
         instr = REGISTRY.instructions()
 
     STATS["node_timings"]["skill_select"] = round(time.time() - t0, 2)
-    log.info("skill_select 选中 %s | 注入正文 %d 字符（mode=%s）",
-             chosen, len(instr), REGISTRY.mode)
+    log.info("skill_select 完成 | 选中 %s | 注入正文 %d 字符（mode=%s） | 耗时 %.2fs",
+             chosen, len(instr), REGISTRY.mode, STATS["node_timings"]["skill_select"])
     return {"skills_used": chosen, "skill_instructions": instr}
 
 
@@ -447,7 +498,8 @@ def search_node(state: BriefState) -> dict:
             pass
     STATS["node_timings"]["search"] = round(time.time() - t0, 2)
     STATS["tool_calls"]["web_search"] = len(queries)
-    log.info("search 完成: %d 个查询, 得到 %d 条结果", len(queries), len(all_items))
+    log.info("search 完成 | %d 个查询 → %d 条结果 | 耗时 %.2fs",
+             len(queries), len(all_items), STATS["node_timings"]["search"])
     return {"search_results": json.dumps(all_items, ensure_ascii=False),
             "errors": errors}
 
@@ -479,19 +531,35 @@ def fetch_node(state: BriefState) -> dict:
             chunks.append(f"### 来源 {u}\n{txt[:800]}")
     STATS["node_timings"]["fetch"] = round(time.time() - t0, 2)
     STATS["tool_calls"]["web_fetch"] = len(urls)
-    log.info("fetch 完成: 读取 %d 个网页", len(urls))
+    log.info("fetch 完成 | 读取 %d 个网页 | 耗时 %.2fs",
+             len(urls), STATS["node_timings"]["fetch"])
     return {"fetched": "\n\n".join(chunks), "errors": errors}
 
 
 def verify_node(state: BriefState) -> dict:
-    """节点4：LLM 对关键事实做交叉核验。"""
+    """节点4：把材料整理成「讲清这个概念所需的知识点」，并顺手核对证据。
+
+    注意：本节点的产物是**给写作环节用的素材**，不是给读者看的核验报告。
+    证据强度只以标签形式附着在知识点上，不单独成段。
+    """
     t0 = time.time()
     topic = state["topic"]
     results = state.get("search_results") or "[]"
     fetched = state.get("fetched") or ""
     prompt = (
-        f"主题：“{topic}”。以下是检索到的资料摘要与网页正文，请提取 3-5 条关键事实，"
-        f"并对每条事实标注“多来源一致 / 单一来源 / 需进一步核实”，说明核验依据。\n\n"
+        f"主题：“{topic}”。下面是检索到的材料。请把它整理成**讲清这个概念所需的知识点**，"
+        f"按下面五类归拢；整理时顺手核对证据，但只打标签，不要写核对过程。\n\n"
+        f"1. 定义：它是什么？一句话说清，并点明所属领域、解决什么问题。\n"
+        f"2. 构成 / 机制：由哪几部分组成，各部分起什么作用、如何配合。\n"
+        f"3. 运作流程：从输入到产出，典型步骤是什么。\n"
+        f"4. 实践要点：落地时的关键做法、参数、取舍或常见工具。\n"
+        f"5. 边界与误区：不适用于什么、容易被误解在哪里。\n\n"
+        f"要求：\n"
+        f"- 每条用自己的话概括，不要照抄摘要措辞；\n"
+        f"- 每条末尾用方括号标证据强度：[多来源一致] / [单一来源] / [存疑]；\n"
+        f"- 某一类材料里没有，就写“材料未覆盖”，不要编造；\n"
+        f"- **不要**输出“已核验”“待核实”“证据强度如下”这类流程性叙述；\n"
+        f"- 输出**总长控制在 500 字以内**，每类 1~2 条、每条一句话，不要复述材料原文。\n\n"
         f"【检索摘要】\n{results[:1500]}\n\n【网页正文摘录】\n{fetched[:1500]}"
     )
     skill_txt = state.get("skill_instructions") or ""      # 渐进式披露：注入已加载技能
@@ -500,7 +568,8 @@ def verify_node(state: BriefState) -> dict:
     resp = llm.invoke(prompt)
     record_usage(resp)
     STATS["node_timings"]["verify"] = round(time.time() - t0, 2)
-    log.info("verify 完成: 核验结论 %d 字符", len(resp.content))
+    log.info("verify 完成 | 知识点 %d 字符 | 耗时 %.2fs",
+             len(resp.content), STATS["node_timings"]["verify"])
     return {"facts": resp.content}
 
 
@@ -540,11 +609,26 @@ def brief_node(state: BriefState) -> dict:
     except Exception:
         srcs = ""
     prompt = (
-        f"请基于下面的核验事实，撰写一份关于“{topic}”的中文技术简报。\n"
-        f"要求：\n1) 正文（不含“来源”小节与链接）严格不超过 500 个汉字，超长请删减；\n"
-        f"2) 使用 Markdown，含标题与分点；\n"
-        f"3) 末尾附“来源”小节，列出以下链接；\n4) 只陈述已核验的事实，不确定的标注“待核实”。\n\n"
-        f"【核验事实】\n{facts}\n\n【可用来源链接】\n{srcs}"
+        f"请写一份**让第一次接触这个主题的读者也能看懂**的中文技术简报，主题：“{topic}”。\n\n"
+        f"读者是想快速搞懂这个概念的人，**不是来审你的证据链的**。所以：\n"
+        f"- 重点讲清「是什么、为什么重要、怎么运作、怎么用」；\n"
+        f"- **不要**出现“核验结论”“证据强度”“单一来源”“待核实”这类成段论述；\n"
+        f"- 只有关键数字或结论确实拿不准时，才用一句括注（如“（该数值待核实）”），全文最多 1~2 处。\n\n"
+        f"结构（Markdown）：\n"
+        f"1. 一级标题＝主题名\n"
+        f"2. **一句话定义**：是什么 + 所属领域 / 解决什么问题（≤60 字）\n"
+        f"3. **为什么重要**：2 句，讲它替代了什么、解决什么痛点\n"
+        f"4. **怎么运作**：2~3 点，每点「小标题 + 一句解释」，**要写出具体机制或步骤**"
+        f"（例如「写入—存储—召回—注入」这样的链路，或「短期缓冲 / 长期存储」这样的层次），不要只说作用\n"
+        f"5. **实践要点**：2~3 条**具体可操作**的做法或选型判断，避免“需结合场景”这类空话\n"
+        f"6. 末尾「来源」小节\n\n"
+        f"硬性要求：\n"
+        f"1) 正文（不含一级标题与“来源”小节）**目标 380~420 字，硬上限 460 字**；"
+        f"宁可少写一条实践要点，也不要超限（超限会触发重写，反而更慢更乱）；\n"
+        f"2) 语言平实少术语，必须出现的术语紧跟一句解释；\n"
+        f"3) “来源”小节原样列出给定链接，不要增删；\n"
+        f"4) 材料确实说不清的部分直接略过，不要用“资料不足”占篇幅。\n\n"
+        f"【知识点材料】\n{facts}\n\n【可用来源链接】\n{srcs}"
     )
     skill_txt = state.get("skill_instructions") or ""      # 渐进式披露：注入已加载技能
     if skill_txt:
@@ -562,9 +646,12 @@ def brief_node(state: BriefState) -> dict:
         attempt += 1
         cur = count_body_chars(brief)
         log.warning("简报正文 %d 字超限（来源不计入），第 %d 次压缩", cur, attempt)
-        p2 = (f"以下简报的**正文**（不含“来源”小节）为 {cur} 字，需压缩到 400 字以内："
-              f"只保留最重要的事实，删除修饰语、重复表述与次要例证；"
-              f"“来源”小节及其中的链接必须原样保留。\n\n{brief}")
+        p2 = (f"以下简报的**正文**（不含“来源”小节）为 {cur} 字，需压缩到 400 字以内。\n"
+              f"要求：\n"
+              f"1) **完整保留原有结构**——一级标题，以及「一句话定义 / 为什么重要 / 怎么运作 / 实践要点」"
+              f"这些小标题与分点层级都不能删，只压缩每个部分内部的文字；\n"
+              f"2) 删修饰语、重复表述与次要例证，但**不删关键机制与具体做法**；\n"
+              f"3) “来源”小节及其中的链接必须原样保留。\n\n{brief}")
         resp2 = llm.invoke(p2)
         record_usage(resp2)
         brief = resp2.content
@@ -575,8 +662,9 @@ def brief_node(state: BriefState) -> dict:
              count_body_chars(brief), src_chars, attempt)
 
     STATS["node_timings"]["brief"] = round(time.time() - t0, 2)
-    log.info("brief 完成: 全文 %d 字符 | 正文 %d 字 | 来源 %d 字",
-             len(brief), count_body_chars(brief), src_chars)
+    log.info("brief 完成 | 全文 %d 字符 | 正文 %d 字 | 来源 %d 字 | 耗时 %.2fs",
+             len(brief), count_body_chars(brief), src_chars,
+             STATS["node_timings"]["brief"])
     return {"brief": brief}
 
 
@@ -617,10 +705,24 @@ def _parse_args() -> tuple[str, str]:
     return topic, mode
 
 
-def main() -> None:
-    global REGISTRY
-    setup_logging()          # 延迟挂载日志 handler：仅 import 时不产生空日志文件
-    topic, skill_mode = _parse_args()
+def start_run() -> str:
+    """为一次运行分配新的 RUN_ID 并重挂日志（同进程可连续跑多次，UI 需要）。"""
+    global RUN_ID, LOG_FILE
+    RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
+    LOG_FILE = os.path.join(LOG_DIR, f"run_{RUN_ID}.log")
+    setup_logging(force=True)
+    return RUN_ID
+
+
+def run_task(topic: str, skill_mode: str = "lazy") -> dict:
+    """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
+
+    同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
+    """
+    global REGISTRY, STATS
+    STATS = fresh_stats()
+    run_id = start_run()
+    REGISTRY = None
 
     # 技能层第一级：启动时只扫描元信息（frontmatter），技能正文不驻留上下文
     if SKILLS_AVAILABLE:
@@ -636,8 +738,8 @@ def main() -> None:
         log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
 
     log.info("========== LangGraph 统一任务实测开始 ==========")
-    log.info("主题=%s | 模型=%s | 技能模式=%s | RUN_ID=%s", topic,
-             os.environ.get("DEEPSEEK_MODEL"), skill_mode, RUN_ID)
+    log.info("主题=%s | 模型=%s | 技能模式=%s | 实现=skill_loader | RUN_ID=%s", topic,
+             os.environ.get("DEEPSEEK_MODEL"), skill_mode, run_id)
 
     # 用计算器工具做一次演示调用（工具调用稳定性 + 参数校验测试）
     log.info("演示 calculator: 2**10 + 3*7 = %s",
@@ -657,7 +759,8 @@ def main() -> None:
     # 汇总统计
     all_errors = list(final.get("errors", [])) + STATS["errors"]
     summary = {
-        "run_id": RUN_ID,
+        "run_id": run_id,
+        "impl": "skill_loader",
         "topic": topic,
         "total_elapsed_s": total,
         "node_timings": STATS["node_timings"],
@@ -675,6 +778,7 @@ def main() -> None:
     log.info("总耗时 %.2fs | LLM调用 %d 次 | token(in=%d, out=%d, 总=%d)",
              total, STATS["llm_calls"], STATS["token_input"],
              STATS["token_output"], STATS["token_input"] + STATS["token_output"])
+    _log_timing_table(total)
     if REGISTRY:
         _sk = REGISTRY.stats()
         log.info("技能层汇总: mode=%s | 加载 %d/%d 个技能 | 注入正文 %d token | 目录 %d token",
@@ -684,19 +788,33 @@ def main() -> None:
         log.warning("故障记录: %s", all_errors)
 
     # 保存最终简报
-    brief_path = os.path.join(OUT_DIR, f"brief_{RUN_ID}.md")
+    brief_text = final.get("brief", "")
+    brief_path = os.path.join(OUT_DIR, f"brief_{run_id}.md")
     with open(brief_path, "w", encoding="utf-8") as f:
-        f.write(final.get("brief", ""))
+        f.write(brief_text)
     # 保存统计
-    stat_path = os.path.join(OUT_DIR, f"stats_{RUN_ID}.json")
+    stat_path = os.path.join(OUT_DIR, f"stats_{run_id}.json")
     with open(stat_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
     log.info("简报已保存: %s", _rel(brief_path))
     log.info("统计已保存: %s", _rel(stat_path))
     log.info("========== 实测结束 ==========")
+
+    return {
+        **summary,
+        "brief": brief_text,
+        "brief_path": _rel(brief_path),
+        "stats_path": _rel(stat_path),
+        "log_path": _rel(LOG_FILE),
+    }
+
+
+def main() -> None:
+    topic, skill_mode = _parse_args()
+    summary = run_task(topic, skill_mode)
     print("\n===== 最终简报 =====\n")
-    print(final.get("brief", ""))
+    print(summary.get("brief", ""))
 
 
 if __name__ == "__main__":
