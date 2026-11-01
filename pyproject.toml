@@ -16,6 +16,7 @@ dependencies = [
     "mcp>=1.30.0",
     "python-dotenv>=1.2.4",
     "tiktoken>=0.14.0",
+    "streamlit>=1.40.0",
 ]
 
 [tool.uv]
