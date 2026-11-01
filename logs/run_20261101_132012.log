@@ -1,0 +1,18 @@
+13:20:12 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 15.35ms
+13:20:12 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:20:12 | INFO    | 主题=Agent 记忆机制 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261101_132012
+13:20:12 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:20:13 | INFO    | plan 生成查询: ['Agent 记忆机制', 'LLM Agent Memory', '智能体长期记忆']
+13:20:20 | INFO    | 技能路由原始输出: search-strategy | source-triage | fact-cross-verify
+13:20:20 | INFO    | skill_select 选中 ['fact-cross-verify', 'search-strategy', 'source-triage'] | 注入正文 1728 字符（mode=lazy）
+13:20:22 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.67s)
+13:20:24 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+13:20:26 | INFO    | fetch 完成: 读取 3 个网页
+13:22:50 | INFO    | verify 完成: 核验结论 880 字符
+13:23:38 | INFO    | 简报定稿：正文 486 字（≤500），来源 448 字不计入，压缩 0 次
+13:23:38 | INFO    | brief 完成: 全文 1017 字符 | 正文 486 字 | 来源 448 字
+13:23:38 | INFO    | 总耗时 206.07s | LLM调用 4 次 | token(in=5153, out=18478, 总=23631)
+13:23:38 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1546 token | 目录 327 token
+13:23:38 | INFO    | 简报已保存: output\brief_20261101_132012.md
+13:23:38 | INFO    | 统计已保存: output\stats_20261101_132012.json
+13:23:38 | INFO    | ========== 实测结束 ==========

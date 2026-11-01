@@ -1,0 +1,18 @@
+13:28:51 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 6.41ms
+13:28:51 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:28:51 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261101_132851
+13:28:51 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:28:52 | INFO    | plan 生成查询: ['大模型上下文工程', 'LLM Context Engineering', '大模型上下文管理']
+13:28:56 | INFO    | 技能路由原始输出: search-strategy v1.0 | source-triage v1.0 | brief-writing v2.0
+13:28:56 | INFO    | skill_select 选中 ['brief-writing', 'search-strategy', 'source-triage'] | 注入正文 2072 字符（mode=lazy）
+13:28:58 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.72s)
+13:29:00 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+13:29:03 | INFO    | fetch 完成: 读取 3 个网页
+13:29:33 | INFO    | verify 完成: 核验结论 489 字符
+13:30:25 | INFO    | 简报定稿：正文 429 字（≤500），来源 630 字不计入，压缩 0 次
+13:30:25 | INFO    | brief 完成: 全文 1134 字符 | 正文 429 字 | 来源 630 字
+13:30:25 | INFO    | 总耗时 94.03s | LLM调用 4 次 | token(in=5776, out=17820, 总=23596)
+13:30:25 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1877 token | 目录 327 token
+13:30:25 | INFO    | 简报已保存: output\brief_20261101_132851.md
+13:30:25 | INFO    | 统计已保存: output\stats_20261101_132851.json
+13:30:25 | INFO    | ========== 实测结束 ==========

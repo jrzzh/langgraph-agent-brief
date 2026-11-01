@@ -1,0 +1,18 @@
+15:08:17 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 311 token | 扫描 16.84ms
+15:08:17 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+15:08:17 | INFO    | 主题=MCP 的基本架构与适用场景 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261031_150817
+15:08:17 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+15:08:19 | INFO    | plan 生成查询: ['MCP 基本架构', 'MCP 适用场景', 'Model Context Protocol 架构 应用场景']
+15:08:23 | INFO    | 技能路由原始输出: search-strategy | source-triage | fact-cross-verify
+15:08:23 | INFO    | skill_select 选中 ['fact-cross-verify', 'search-strategy', 'source-triage'] | 注入正文 1358 字符（mode=lazy）
+15:08:25 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.85s)
+15:08:27 | INFO    | search 完成: 3 个查询, 得到 15 条结果
+15:08:29 | INFO    | fetch 完成: 读取 3 个网页
+15:08:51 | INFO    | verify 完成: 核验结论 1141 字符
+15:09:07 | INFO    | 简报定稿：正文 463 字（≤500），来源 466 字不计入，压缩 0 次
+15:09:07 | INFO    | brief 完成: 全文 1054 字符 | 正文 463 字 | 来源 466 字
+15:09:07 | INFO    | 总耗时 49.88s | LLM调用 4 次 | token(in=4346, out=7452, 总=11798)
+15:09:07 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1213 token | 目录 311 token
+15:09:07 | INFO    | 简报已保存: output\brief_20261031_150817.md
+15:09:07 | INFO    | 统计已保存: output\stats_20261031_150817.json
+15:09:07 | INFO    | ========== 实测结束 ==========

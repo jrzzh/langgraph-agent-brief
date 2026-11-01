@@ -1,0 +1,82 @@
+========== deepagents 原生 Skills 启动 RUN_ID=20261101_133130 ==========
+主题=大模型上下文工程 | 模型=deepseek-flash | 技能源=/skills/
+
+==============================================================================
+deepagents 原生 Skills 运行日志
+RUN_ID  : 20261101_133130
+主题    : 大模型上下文工程
+模型    : deepseek-flash
+技能源  : /skills/
+backend : FilesystemBackend(virtual_mode=True，根目录=项目根)
+agent 构建耗时: 0.14s（含 SkillsMiddleware 扫描技能）
+==============================================================================
+
+【技能加载】由 read_file 工具调用解析
+  1. search-strategy          /skills/search-strategy/SKILL.md             0.0s
+  2. fact-cross-verify        /skills/fact-cross-verify/SKILL.md           0.0s
+  3. source-triage            /skills/source-triage/SKILL.md               0.0s
+  4. citation-format          /skills/citation-format/SKILL.md             0.0s
+  5. brief-writing            /skills/brief-writing/SKILL.md               0.0s
+  合计加载 5/5 个技能（全部）
+
+【步骤耗时分解】（每步 = 1 次 LLM 调用 + 该步产出的工具调用）
+步骤      LLM(s)     工具阶段(s)       输入tok       输出tok                                             该步工具
+  --------------------------------------------------------------------------------------------
+1       2.00       0.01          3756        360                                        read_file×5
+2       1.95       2.25          6381        279                                       web_search×5
+3       3.44       5.75          13351       443                           web_search×2、web_fetch×1
+4       3.26       3.76          16809       498                           web_search×2、web_fetch×2
+5       7.99       1.59          20968       1158                                       web_fetch×2
+6       37.91      0.00          23662       6968                                       —（直接给出最终回答）
+  小计：LLM 56.55s + 工具阶段 13.36s
+
+  中间件耗时（技能扫描/注入，远小于 LLM）：
+    SkillsMiddleware.before_agent          1 次  0.010s
+    SkillsMiddleware.before_model          6 次  0.000s
+    PatchToolCallsMiddleware.before_agent  1 次  0.000s
+    _ParentNotifierMiddleware.after_agent  1 次  0.000s
+
+【LLM 调用明细】
+#     开始(s)      耗时(s)      输入token          输出token
+  ------------------------------------------------
+1     0.02       2.00       3756                 360
+2     2.03       1.95       6381                 279
+3     6.23       3.44       13351                443
+4     15.41      3.26       16809                498
+5     22.43      7.99       20968               1158
+6     32.01      37.91      23662               6968
+
+【工具调用明细】
+#     开始(s)      耗时(s)      工具            输出                                           参数摘要
+  ------------------------------------------------------------------------------------
+1     2.02       0.00       read_file     683      {'file_path': '/skills/search-strategy/S
+2     2.02       0.00       read_file     989      {'file_path': '/skills/fact-cross-verify
+3     2.02       0.00       read_file     837      {'file_path': '/skills/source-triage/SKI
+4     2.02       0.00       read_file     570      {'file_path': '/skills/citation-format/S
+5     2.02       0.00       read_file     1360     {'file_path': '/skills/brief-writing/SKI
+6     3.98       1.84       web_search    3069         {'query': 'context engineering LLM'}
+7     3.98       1.93       web_search    4979     {'query': 'context window management com
+8     3.98       1.94       web_search    2742     {'query': 'Anthropic effective context e
+9     3.98       2.21       web_search    1221                       {'query': '上下文工程 大模型'}
+10    3.98       2.24       web_search    4561           {'query': 'context rot 长上下文 性能下降'}
+11    9.66       1.70       web_search    2734     {'query': 'Chroma context rot research r
+12    9.66       1.72       web_search    3687     {'query': 'LangChain context engineering
+13    9.66       5.74       web_fetch     3095     {'url': 'https://www.anthropic.com/engin
+14    18.67      1.78       web_search    3792     {'query': 'Tobi Lütke context engineerin
+15    18.67      2.13       web_search    1201     {'query': 'Anthropic compaction structur
+16    18.67      3.50       web_fetch     3141     {'url': 'https://blog.langchain.com/cont
+17    18.67      3.76       web_fetch     3126     {'url': 'https://research.trychroma.com/
+18    30.42      1.54       web_fetch     94       {'url': 'https://baijiahao.baidu.com/s?i
+19    30.42      1.59       web_fetch     3180     {'url': 'https://developer.baidu.com/art
+
+【汇总】
+  墙钟总耗时 : 69.92s（含 agent 构建 0.14s）
+  LLM 调用   : 6 次  56.55s  (80.9%)  token in=84927 out=9706 总=94633
+  工具调用   : 19 次（顶层）  33.62s  {'read_file': 5, 'web_search': 9, 'web_fetch': 5}
+  嵌套调用   : 14 次  {'search_pro': 9, 'web_fetch': 5}（web_search/web_fetch 内部的 MCP 工具，已排除避免重复计数）
+  技能加载   : 5/5 个  ['search-strategy', 'fact-cross-verify', 'source-triage', 'citation-format', 'brief-writing']
+  简报字数   : 2087
+==============================================================================
+简报已保存: output\brief_deepagents_20261101_133130.md
+统计已保存: output\stats_deepagents_20261101_133130.json
+日志已保存: logs\deepagents_20261101_133130.log

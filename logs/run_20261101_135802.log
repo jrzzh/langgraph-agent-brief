@@ -1,0 +1,28 @@
+13:58:02 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 16.14ms
+13:58:02 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:58:02 | INFO    | 主题=MCP 的基本架构与适用场景 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261101_135802
+13:58:02 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:58:03 | INFO    | plan 完成 | 生成查询 ['MCP 基本架构', 'MCP 适用场景', 'Model Context Protocol 架构 应用场景'] | 耗时 1.50s
+13:58:09 | INFO    | 技能路由原始输出: brief-writing | search-strategy | source-triage
+13:58:09 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'search-strategy', 'source-triage'] | 注入正文 2072 字符（mode=lazy） | 耗时 5.87s
+13:58:11 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.79s)
+13:58:13 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 3.74s
+13:58:15 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 1.75s
+13:58:40 | INFO    | verify 完成 | 知识点 562 字符 | 耗时 25.33s
+13:59:10 | INFO    | 简报定稿：正文 431 字（≤500），来源 431 字不计入，压缩 0 次
+13:59:10 | INFO    | brief 完成 | 全文 955 字符 | 正文 431 字 | 来源 431 字 | 耗时 29.92s
+13:59:10 | INFO    | 总耗时 68.12s | LLM调用 4 次 | token(in=5528, out=11846, 总=17374)
+13:59:10 | INFO    | ---------- 各步骤耗时 ----------
+13:59:10 | INFO    |   brief            29.92s   43.9%  ██████████████
+13:59:10 | INFO    |   verify           25.33s   37.2%  ████████████
+13:59:10 | INFO    |   skill_select      5.87s    8.6%  ██
+13:59:10 | INFO    |   search            3.74s    5.5%  █
+13:59:10 | INFO    |   fetch             1.75s    2.6%  █
+13:59:10 | INFO    |   plan              1.50s    2.2%  █
+13:59:10 | INFO    |   节点合计         68.11s  100.0%
+13:59:10 | INFO    |   图外开销          0.01s    0.0%
+13:59:10 | INFO    |   总耗时           68.12s
+13:59:10 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1877 token | 目录 327 token
+13:59:10 | INFO    | 简报已保存: output\brief_20261101_135802.md
+13:59:10 | INFO    | 统计已保存: output\stats_20261101_135802.json
+13:59:10 | INFO    | ========== 实测结束 ==========

@@ -1,0 +1,28 @@
+13:59:52 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 5.76ms
+13:59:52 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:59:52 | INFO    | 主题=RAG 与长上下文的关系 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261101_135952
+13:59:52 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:59:54 | INFO    | plan 完成 | 生成查询 ['RAG 长上下文', '检索增强生成 长上下文 对比', '长上下文窗口 替代 RAG'] | 耗时 2.28s
+14:00:02 | INFO    | 技能路由原始输出: search-strategy | source-triage | brief-writing
+14:00:02 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'search-strategy', 'source-triage'] | 注入正文 2072 字符（mode=lazy） | 耗时 7.63s
+14:00:03 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.61s)
+14:00:06 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 3.78s
+14:00:11 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 5.57s
+14:00:31 | INFO    | verify 完成 | 知识点 458 字符 | 耗时 20.28s
+14:01:00 | INFO    | 简报定稿：正文 425 字（≤500），来源 444 字不计入，压缩 0 次
+14:01:00 | INFO    | brief 完成 | 全文 941 字符 | 正文 425 字 | 来源 444 字 | 耗时 28.39s
+14:01:00 | INFO    | 总耗时 67.93s | LLM调用 4 次 | token(in=5619, out=10144, 总=15763)
+14:01:00 | INFO    | ---------- 各步骤耗时 ----------
+14:01:00 | INFO    |   brief            28.39s   41.8%  █████████████
+14:01:00 | INFO    |   verify           20.28s   29.9%  █████████
+14:01:00 | INFO    |   skill_select      7.63s   11.2%  ███
+14:01:00 | INFO    |   fetch             5.57s    8.2%  ██
+14:01:00 | INFO    |   search            3.78s    5.6%  █
+14:01:00 | INFO    |   plan              2.28s    3.4%  █
+14:01:00 | INFO    |   节点合计         67.93s  100.0%
+14:01:00 | INFO    |   图外开销          0.00s    0.0%
+14:01:00 | INFO    |   总耗时           67.93s
+14:01:00 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1877 token | 目录 327 token
+14:01:00 | INFO    | 简报已保存: output\brief_20261101_135952.md
+14:01:00 | INFO    | 统计已保存: output\stats_20261101_135952.json
+14:01:00 | INFO    | ========== 实测结束 ==========

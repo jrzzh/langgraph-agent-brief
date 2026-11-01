@@ -1,0 +1,80 @@
+{
+  "run_id": "20261101_132012",
+  "impl": "skill_loader",
+  "topic": "Agent 记忆机制",
+  "total_elapsed_s": 206.07,
+  "node_timings": {
+    "plan": 1.35,
+    "skill_select": 6.98,
+    "search": 3.84,
+    "fetch": 1.59,
+    "verify": 144.69,
+    "brief": 47.62
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "skills": {
+    "mode": "lazy",
+    "skill_count": 5,
+    "skill_names": [
+      "brief-writing",
+      "citation-format",
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "catalog_chars": 456,
+    "catalog_tokens": 327,
+    "loaded": [
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "loaded_count": 3,
+    "loaded_body_chars": 1655,
+    "loaded_body_tokens": 1546,
+    "all_body_chars": 2949,
+    "all_body_tokens": 2752,
+    "scan_ms": 15.35,
+    "preload_ms": 0.0,
+    "loaded_detail": {
+      "fact-cross-verify": {
+        "chars": 693,
+        "tokens": 668,
+        "load_ms": 0.32
+      },
+      "search-strategy": {
+        "chars": 408,
+        "tokens": 376,
+        "load_ms": 0.21
+      },
+      "source-triage": {
+        "chars": 554,
+        "tokens": 502,
+        "load_ms": 0.24
+      }
+    },
+    "token_estimator": "tiktoken/cl100k_base",
+    "estimator_init_ms": 75.7
+  },
+  "skills_used": [
+    "fact-cross-verify",
+    "search-strategy",
+    "source-triage"
+  ],
+  "llm_calls": 4,
+  "token_input": 5153,
+  "token_output": 18478,
+  "token_total": 23631,
+  "errors": []
+}
