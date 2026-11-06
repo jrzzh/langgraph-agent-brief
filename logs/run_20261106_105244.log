@@ -1,0 +1,31 @@
+10:52:44 | INFO    | 文件读写 | 读入补充材料 1 个: ['sources/example-mcp.md']（合计 316 字符）
+10:52:45 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 51.39ms
+10:52:45 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+10:52:45 | INFO    | 主题=MCP 的基本架构与适用场景 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261106_105244
+10:52:45 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator', 'read_file', 'write_file'] | workspace 文件读写=启用（补充材料 1 个）
+10:52:45 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+10:52:47 | INFO    | plan 完成 | 生成查询 ['MCP 基本架构 适用场景', 'Model Context Protocol 架构 应用场景', 'MCP 协议 技术架构 使用场景'] | 耗时 2.25s
+10:52:54 | INFO    | 技能路由原始输出: brief-writing | fact-cross-verify | source-triage
+10:52:54 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'fact-cross-verify', 'source-triage'] | 注入正文 2359 字符（mode=lazy） | 耗时 7.27s
+10:52:55 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.25s)
+10:52:57 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 2.91s
+10:52:59 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 1.89s
+10:53:11 | INFO    | verify 完成 | 知识点 595 字符 | 耗时 12.30s
+10:54:38 | INFO    | 简报定稿：正文 490 字（≤500），来源 430 字不计入，压缩 0 次
+10:54:38 | INFO    | brief 完成 | 全文 1022 字符 | 正文 490 字 | 来源 430 字 | 耗时 87.12s
+10:54:38 | INFO    | 总耗时 113.75s | LLM调用 4 次 | token(in=5998, out=5876, 总=11874)
+10:54:38 | INFO    | ---------- 各步骤耗时 ----------
+10:54:38 | INFO    |   brief            87.12s   76.6%  █████████████████████████
+10:54:38 | INFO    |   verify           12.30s   10.8%  ███
+10:54:38 | INFO    |   skill_select      7.27s    6.4%  ██
+10:54:38 | INFO    |   search            2.91s    2.6%  █
+10:54:38 | INFO    |   plan              2.25s    2.0%  █
+10:54:38 | INFO    |   fetch             1.89s    1.7%  █
+10:54:38 | INFO    |   节点合计        113.74s  100.0%
+10:54:38 | INFO    |   图外开销          0.01s    0.0%
+10:54:38 | INFO    |   总耗时          113.75s
+10:54:38 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 2169 token | 目录 327 token
+10:54:38 | INFO    | 文件读写 | 已写入 workspace/briefs/brief_20261106_105244.md（2015 字节，sha256=9b44bee59b4c）
+10:54:38 | INFO    | 简报已保存: output\brief_20261106_105244.md
+10:54:38 | INFO    | 统计已保存: output\stats_20261106_105244.json
+10:54:38 | INFO    | ========== 实测结束 ==========

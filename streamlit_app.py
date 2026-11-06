@@ -244,6 +244,20 @@ def _run_tab() -> None:
         if is_deep:
             st.caption("deepagents 的技能加载由框架内部决定，此选项不生效。")
 
+    # 文件读写开关（默认关闭）：与工具集、技能模式并列，属于「本次运行的能力选择」
+    enable_files = st.checkbox(
+        "启用 workspace 文件工具",
+        value=False,
+        help="开启后：运行前读取 workspace/sources/ 作为补充材料，运行后把简报写入 workspace/briefs/；"
+             "deepagents 实现下则由模型自主决定何时读写。",
+    )
+    if enable_files:
+        ws_files = ab.list_workspace_files() if ab.FILES_AVAILABLE else []
+        st.caption(
+            f"文件边界：读写仅限项目内 `workspace/`，写入默认不覆盖。"
+            f"当前该目录下有 {len(ws_files)} 个文本文件。"
+        )
+
     st.divider()
     if st.button("▶ 运行统一任务", type="primary"):
         if not topic.strip():
@@ -258,9 +272,10 @@ def _run_tab() -> None:
                 if is_deep:
                     import agent_deepagents as dd
 
-                    summary = dd.run_task(topic.strip())
+                    summary = dd.run_task(topic.strip(), enable_files=enable_files)
                 else:
-                    summary = ab.run_task(topic.strip(), skill_mode)
+                    summary = ab.run_task(topic.strip(), skill_mode,
+                                          enable_files=enable_files)
             except Exception as exc:                       # noqa: BLE001 - 界面需显示原因
                 st.error(f"运行失败：{type(exc).__name__}: {exc}")
                 return
@@ -333,6 +348,24 @@ def main() -> None:
             st.dataframe(catalog, hide_index=True)
         else:
             st.info("skills/ 下没有可用技能。")
+        st.divider()
+        st.header("文件边界")
+        st.write("读写仅限项目内 `workspace/`；写入默认不覆盖。")
+        st.caption(
+            "`sources/` 作为补充材料读入，`briefs/` 存放运行产出；"
+            "路径必须为相对路径，仅限文本类后缀，单次读取 ≤ 1 MB。"
+        )
+        if ab.FILES_AVAILABLE:
+            ws_files = ab.list_workspace_files()
+            if ws_files:
+                st.dataframe(
+                    [{"文件": f["path"], "字节": f["bytes"]} for f in ws_files],
+                    hide_index=True,
+                )
+            else:
+                st.caption("workspace/ 目前没有文本文件。")
+        else:
+            st.warning("file_tools 未加载，文件读写不可用。")
 
     tabs = st.tabs(["运行实验", "历史记录"])
     with tabs[0]:

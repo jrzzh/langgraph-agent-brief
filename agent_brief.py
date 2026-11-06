@@ -358,7 +358,33 @@ def calculator(expression: str) -> str:
         return f"计算错误：{e}"
 
 
-TOOLS = [web_search, web_fetch, calculator]
+BASE_TOOLS = [web_search, web_fetch, calculator]
+
+#: 可选的 workspace 文件读写工具（默认不启用，需显式开启）
+try:
+    from file_tools import (
+        FILE_TOOLS,
+        collect_sources,
+        list_workspace_files,
+        read_file_impl,
+        set_workspace_root,
+        write_file_impl,
+        workspace_root,
+    )
+
+    FILES_AVAILABLE = True
+except Exception:                       # 文件工具缺失时不影响主流程
+    FILE_TOOLS = []                     # type: ignore
+    FILES_AVAILABLE = False
+
+#: 兼容既有引用（deepagents 等模块 import 的是这个名字）
+TOOLS = list(BASE_TOOLS)
+
+
+def get_tools(enable_files: bool = False) -> list:
+    """返回本次运行可用的工具集；开启文件读写时追加 read_file / write_file。"""
+    return [*BASE_TOOLS, *(FILE_TOOLS if (enable_files and FILES_AVAILABLE) else [])]
+
 
 # ---------------------------------------------------------------------------
 # 图状态定义
@@ -368,6 +394,7 @@ class BriefState(TypedDict):
     queries: list[str]
     search_results: str          # JSON 字符串
     fetched: str                 # 拼接的网页正文
+    source_material: str         # workspace/sources 提供的补充材料（启用文件工具时）
     facts: str                   # 交叉核验结论
     brief: str                   # 最终简报
     skills_used: list[str]       # 技能路由选中的技能名
@@ -561,6 +588,8 @@ def verify_node(state: BriefState) -> dict:
         f"- **不要**输出“已核验”“待核实”“证据强度如下”这类流程性叙述；\n"
         f"- 输出**总长控制在 500 字以内**，每类 1~2 条、每条一句话，不要复述材料原文。\n\n"
         f"【检索摘要】\n{results[:1500]}\n\n【网页正文摘录】\n{fetched[:1500]}"
+        + (f"\n\n【workspace 补充材料】\n{(state.get('source_material') or '')[:3000]}"
+           if (state.get("source_material") or "").strip() else "")
     )
     skill_txt = state.get("skill_instructions") or ""      # 渐进式披露：注入已加载技能
     if skill_txt:
@@ -692,17 +721,20 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-def _parse_args() -> tuple[str, str]:
-    """解析命令行：位置参数为主题；`--skills=lazy|eager|off` 选择技能加载模式。"""
-    topic, mode = "大模型上下文工程", "lazy"
+def _parse_args() -> tuple[str, str, bool]:
+    """解析命令行：位置参数为主题；`--skills=lazy|eager|off` 选择技能加载模式；
+    `--files` 开启 workspace 文件读写。"""
+    topic, mode, files = "大模型上下文工程", "lazy", False
     for a in sys.argv[1:]:
         if a.startswith("--skills="):
             mode = a.split("=", 1)[1].strip().lower()
+        elif a in ("--files", "--file-tools"):
+            files = True
         elif not a.startswith("-"):
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-    return topic, mode
+    return topic, mode, files
 
 
 def start_run() -> str:
@@ -714,15 +746,37 @@ def start_run() -> str:
     return RUN_ID
 
 
-def run_task(topic: str, skill_mode: str = "lazy") -> dict:
+def run_task(topic: str, skill_mode: str = "lazy",
+             enable_files: bool = False) -> dict:
     """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
+    ``enable_files=True`` 时启用 workspace 文件读写：
+    运行前把 ``workspace/sources/`` 读入作为补充材料，运行后把简报写入 ``workspace/briefs/``。
     """
     global REGISTRY, STATS
     STATS = fresh_stats()
     run_id = start_run()
     REGISTRY = None
+
+    # 文件读写：读入 workspace/sources 作为补充材料（仅在启用时）
+    source_text, source_files = "", []
+    if enable_files and FILES_AVAILABLE:
+        try:
+            collected = collect_sources()
+            source_text = collected.get("text", "")
+            source_files = collected.get("files", [])
+            STATS["tool_calls"]["read_file"] = len(source_files)
+            if source_files:
+                log.info("文件读写 | 读入补充材料 %d 个: %s（合计 %d 字符）",
+                         len(source_files), source_files, len(source_text))
+            else:
+                log.info("文件读写 | workspace/sources 为空，本次无补充材料")
+        except Exception as e:
+            log.warning("文件读写 | 读取 sources 失败: %s", e)
+            STATS["errors"].append(f"文件读取失败: {type(e).__name__}: {e}")
+    elif enable_files and not FILES_AVAILABLE:
+        log.warning("文件读写 | file_tools 不可用，已忽略该选项")
 
     # 技能层第一级：启动时只扫描元信息（frontmatter），技能正文不驻留上下文
     if SKILLS_AVAILABLE:
@@ -740,6 +794,9 @@ def run_task(topic: str, skill_mode: str = "lazy") -> dict:
     log.info("========== LangGraph 统一任务实测开始 ==========")
     log.info("主题=%s | 模型=%s | 技能模式=%s | 实现=skill_loader | RUN_ID=%s", topic,
              os.environ.get("DEEPSEEK_MODEL"), skill_mode, run_id)
+    log.info("工具集=%s | workspace 文件读写=%s",
+             [t.name for t in get_tools(enable_files)],
+             ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭")
 
     # 用计算器工具做一次演示调用（工具调用稳定性 + 参数校验测试）
     log.info("演示 calculator: 2**10 + 3*7 = %s",
@@ -748,7 +805,7 @@ def run_task(topic: str, skill_mode: str = "lazy") -> dict:
     app = build_graph()
     t0 = time.time()
     try:
-        final = app.invoke({"topic": topic})
+        final = app.invoke({"topic": topic, "source_material": source_text})
         total = round(time.time() - t0, 2)
     except Exception as e:
         log.exception("图执行失败")
@@ -773,6 +830,9 @@ def run_task(topic: str, skill_mode: str = "lazy") -> dict:
         "token_input": STATS["token_input"],
         "token_output": STATS["token_output"],
         "token_total": STATS["token_input"] + STATS["token_output"],
+        "file_tools": {"enabled": bool(enable_files and FILES_AVAILABLE),
+                       "sources": source_files,
+                       "written": []},
         "errors": all_errors,
     }
     log.info("总耗时 %.2fs | LLM调用 %d 次 | token(in=%d, out=%d, 总=%d)",
@@ -792,6 +852,22 @@ def run_task(topic: str, skill_mode: str = "lazy") -> dict:
     brief_path = os.path.join(OUT_DIR, f"brief_{run_id}.md")
     with open(brief_path, "w", encoding="utf-8") as f:
         f.write(brief_text)
+
+    # 文件读写：把简报写入 workspace/briefs/（演示 write_file，默认不覆盖）
+    if enable_files and FILES_AVAILABLE and brief_text.strip():
+        rel_out = f"briefs/brief_{run_id}.md"
+        try:
+            res = write_file_impl(rel_out, brief_text, overwrite=False)
+            summary["file_tools"]["written"].append(res["path"])
+            STATS["tool_calls"]["write_file"] = 1
+            log.info("文件读写 | 已写入 workspace/%s（%d 字节，sha256=%s）",
+                     res["path"], res["bytes_written"], res["sha256"][:12])
+        except Exception as e:                      # noqa: BLE001 - 写入失败不影响主流程
+            code = getattr(e, "code", type(e).__name__)
+            msg = getattr(e, "message", str(e))
+            log.warning("文件读写 | 写入失败 [%s] %s", code, msg)
+            STATS["errors"].append(f"文件写入失败[{code}]: {msg}")
+
     # 保存统计
     stat_path = os.path.join(OUT_DIR, f"stats_{run_id}.json")
     with open(stat_path, "w", encoding="utf-8") as f:
@@ -811,10 +887,15 @@ def run_task(topic: str, skill_mode: str = "lazy") -> dict:
 
 
 def main() -> None:
-    topic, skill_mode = _parse_args()
-    summary = run_task(topic, skill_mode)
+    topic, skill_mode, enable_files = _parse_args()
+    summary = run_task(topic, skill_mode, enable_files=enable_files)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
+    ft = summary.get("file_tools") or {}
+    if ft.get("enabled"):
+        print("\n===== workspace 文件读写 =====")
+        print(f"  读入补充材料: {ft.get('sources') or '无'}")
+        print(f"  写入简报    : {ft.get('written') or '无'}")
 
 
 if __name__ == "__main__":
