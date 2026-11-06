@@ -69,3 +69,7 @@ xlsx_check.json
 # ============================================================
 # logs/
 # output/
+
+# workspace：sources 素材入库，briefs 是运行产物（与 output/ 重复，不入库）
+workspace/briefs/*
+!workspace/briefs/.gitkeep

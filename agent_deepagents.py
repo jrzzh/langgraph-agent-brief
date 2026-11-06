@@ -42,7 +42,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
 
-from agent_brief import BASE_DIR, LOG_DIR, OUT_DIR, TOOLS, _rel, llm
+from agent_brief import BASE_DIR, LOG_DIR, OUT_DIR, _rel, get_tools, llm
 
 SKILLS_SOURCE = "/skills/"          # 相对 backend root，deepagents 要求正斜杠
 SKILLS_DIR = os.path.join(BASE_DIR, "skills")
@@ -67,7 +67,7 @@ SKILL.md 并遵循其中的方法要求，再开始执行。"""
 class TimingHandler(BaseCallbackHandler):
     """记录各节点、LLM 调用与工具调用的起止时间。"""
 
-    def __init__(self) -> None:
+    def __init__(self, tool_names: set[str] | None = None) -> None:
         self.t0 = time.time()
         self._node_start = {}
         self.node_total = defaultdict(float)
@@ -80,7 +80,7 @@ class TimingHandler(BaseCallbackHandler):
         self.nested_tool_calls = []  # 嵌套调用（如 web_search 内部的 MCP search_pro）
         self.skills = []             # [(技能名, 路径, 耗时)]
         self._seen_skill = set()
-        self.tool_names = {t.name for t in TOOLS}   # 用于排除"工具自身的链"
+        self.tool_names = set(tool_names) if tool_names else {t.name for t in get_tools(False)}
         self.skipped_chain = Counter()
 
     # -- 图节点 ------------------------------------------------------------
@@ -328,13 +328,16 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
     return L
 
 
-def run_task(topic: str = "大模型上下文工程") -> dict:
+def run_task(topic: str = "大模型上下文工程",
+             enable_files: bool = False) -> dict:
     """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
+    ``enable_files=True`` 时把 workspace 文件读写工具一并交给模型自主调用。
     """
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(LOG_DIR, exist_ok=True)
+    tools = get_tools(enable_files)
 
     log_path = os.path.join(LOG_DIR, f"deepagents_{run_id}.log")
     captured: list[str] = []
@@ -349,21 +352,23 @@ def run_task(topic: str = "大模型上下文工程") -> dict:
             log_fh.flush()
 
         emit([f"========== deepagents 原生 Skills 启动 RUN_ID={run_id} ==========",
-              f"主题={topic} | 模型={os.environ.get('DEEPSEEK_MODEL')} | 技能源={SKILLS_SOURCE}"])
+              f"主题={topic} | 模型={os.environ.get('DEEPSEEK_MODEL')} | 技能源={SKILLS_SOURCE}",
+              f"工具集={[t.name for t in tools]} | workspace 文件读写="
+              f"{'启用' if enable_files else '关闭'}"])
 
         # ---- 构建 ----
         t_build = time.time()
         backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
         agent = create_deep_agent(
             model=llm,
-            tools=TOOLS,
+            tools=tools,
             backend=backend,
             skills=[SKILLS_SOURCE],
         )
         build_s = round(time.time() - t_build, 2)
 
         # ---- 执行（回调采集）----
-        handler = TimingHandler()
+        handler = TimingHandler({t.name for t in tools})
         handler.t0 = time.time()
         t0 = time.time()
         try:
@@ -423,8 +428,10 @@ def run_task(topic: str = "大模型上下文工程") -> dict:
 
 
 def main() -> None:
-    topic = sys.argv[1] if len(sys.argv) > 1 else "大模型上下文工程"
-    summary = run_task(topic)
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    topic = args[0] if args else "大模型上下文工程"
+    enable_files = any(a in ("--files", "--file-tools") for a in sys.argv[1:])
+    summary = run_task(topic, enable_files=enable_files)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
 

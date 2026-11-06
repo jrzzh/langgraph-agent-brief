@@ -1,0 +1,33 @@
+10:32:26 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 5.79ms
+10:32:26 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+10:32:26 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261106_103226
+10:32:26 | INFO    | 权限策略 | T1 能力首次使用授权（运行内记忆）| T3 私网/回环地址硬拦截| 模型调用不拦截（仅记录）
+10:32:26 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+10:32:28 | INFO    | plan 完成 | 生成查询 ['大模型上下文工程', 'LLM context engineering', '大模型 上下文管理 提示工程'] | 耗时 1.88s
+10:32:48 | INFO    | 技能路由原始输出: brief-writing | fact-cross-verify | search-strategy
+10:32:48 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'fact-cross-verify', 'search-strategy'] | 注入正文 2215 字符（mode=lazy） | 耗时 19.71s
+10:32:56 | INFO    | 权限 | mcp 已授权 | 连接千问 EnhancedSearch / WebFetch（外发 DASHSCOPE_API_KEY）
+10:32:57 | INFO    | 权限 | web_search 已授权 | 将向搜索引擎发送 3 个查询词
+10:32:59 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.28s)
+10:33:00 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 3.05s
+10:33:03 | INFO    | 权限 | web_fetch 已授权 | 将读取 3 个网页正文
+10:33:06 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 2.31s
+10:33:19 | INFO    | verify 完成 | 知识点 573 字符 | 耗时 13.51s
+10:33:30 | INFO    | 简报定稿：正文 412 字（≤500），来源 623 字不计入，压缩 0 次
+10:33:30 | INFO    | brief 完成 | 全文 1122 字符 | 正文 412 字 | 来源 623 字 | 耗时 11.02s
+10:33:30 | INFO    | 总耗时 51.52s | LLM调用 4 次 | token(in=5843, out=7996, 总=13839)
+10:33:30 | INFO    | 权限快照 | calculator=允许(自动) | mcp=允许 | web_fetch=允许 | web_search=允许
+10:33:30 | INFO    | ---------- 各步骤耗时 ----------
+10:33:30 | INFO    |   skill_select     19.71s   38.3%  ████████████
+10:33:30 | INFO    |   verify           13.51s   26.2%  ████████
+10:33:30 | INFO    |   brief            11.02s   21.4%  ███████
+10:33:30 | INFO    |   search            3.05s    5.9%  █
+10:33:30 | INFO    |   fetch             2.31s    4.5%  █
+10:33:30 | INFO    |   plan              1.88s    3.6%  █
+10:33:30 | INFO    |   节点合计         51.48s   99.9%
+10:33:30 | INFO    |   图外开销          0.04s    0.1%
+10:33:30 | INFO    |   总耗时           51.52s
+10:33:30 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 2043 token | 目录 327 token
+10:33:30 | INFO    | 简报已保存: output\brief_20261106_103226.md
+10:33:30 | INFO    | 统计已保存: output\stats_20261106_103226.json
+10:33:30 | INFO    | ========== 实测结束 ==========

@@ -1,0 +1,91 @@
+{
+  "run_id": "20261106_105244",
+  "impl": "skill_loader",
+  "topic": "MCP 的基本架构与适用场景",
+  "total_elapsed_s": 113.75,
+  "node_timings": {
+    "plan": 2.25,
+    "skill_select": 7.27,
+    "search": 2.91,
+    "fetch": 1.89,
+    "verify": 12.3,
+    "brief": 87.12
+  },
+  "tool_calls": {
+    "read_file": 1,
+    "web_search": 3,
+    "web_fetch": 3,
+    "write_file": 1
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "skills": {
+    "mode": "lazy",
+    "skill_count": 5,
+    "skill_names": [
+      "brief-writing",
+      "citation-format",
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "catalog_chars": 456,
+    "catalog_tokens": 327,
+    "loaded": [
+      "brief-writing",
+      "fact-cross-verify",
+      "source-triage"
+    ],
+    "loaded_count": 3,
+    "loaded_body_chars": 2288,
+    "loaded_body_tokens": 2169,
+    "all_body_chars": 3000,
+    "all_body_tokens": 2805,
+    "scan_ms": 51.39,
+    "preload_ms": 0.0,
+    "loaded_detail": {
+      "brief-writing": {
+        "chars": 1041,
+        "tokens": 999,
+        "load_ms": 0.41
+      },
+      "fact-cross-verify": {
+        "chars": 693,
+        "tokens": 668,
+        "load_ms": 0.19
+      },
+      "source-triage": {
+        "chars": 554,
+        "tokens": 502,
+        "load_ms": 0.14
+      }
+    },
+    "token_estimator": "tiktoken/cl100k_base",
+    "estimator_init_ms": 77.58
+  },
+  "skills_used": [
+    "brief-writing",
+    "fact-cross-verify",
+    "source-triage"
+  ],
+  "llm_calls": 4,
+  "token_input": 5998,
+  "token_output": 5876,
+  "token_total": 11874,
+  "file_tools": {
+    "enabled": true,
+    "sources": [
+      "sources/example-mcp.md"
+    ],
+    "written": [
+      "briefs/brief_20261106_105244.md"
+    ]
+  },
+  "errors": []
+}
