@@ -1,0 +1,31 @@
+10:58:42 | INFO    | 文件读写 | 读入补充材料 1 个: ['sources/example-mcp.md']（合计 316 字符）
+10:58:42 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 5.74ms
+10:58:42 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+10:58:42 | INFO    | 主题=大模型上下文工程 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261106_105842
+10:58:42 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator', 'read_file', 'write_file'] | workspace 文件读写=启用（补充材料 1 个）
+10:58:42 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+10:58:43 | INFO    | plan 完成 | 生成查询 ['大模型上下文工程', 'LLM上下文工程', 'Context Engineering 大模型'] | 耗时 1.22s
+10:58:45 | INFO    | 技能路由原始输出: search-strategy | source-triage | brief-writing
+10:58:45 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'search-strategy', 'source-triage'] | 注入正文 2072 字符（mode=lazy） | 耗时 1.92s
+10:58:46 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.19s)
+10:58:48 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 2.88s
+10:58:50 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 1.67s
+10:59:17 | INFO    | verify 完成 | 知识点 481 字符 | 耗时 26.86s
+10:59:25 | INFO    | 简报定稿：正文 467 字（≤500），来源 463 字不计入，压缩 0 次
+10:59:25 | INFO    | brief 完成 | 全文 1000 字符 | 正文 467 字 | 来源 463 字 | 耗时 8.61s
+10:59:25 | INFO    | 总耗时 43.16s | LLM调用 4 次 | token(in=5633, out=6361, 总=11994)
+10:59:25 | INFO    | ---------- 各步骤耗时 ----------
+10:59:25 | INFO    |   verify           26.86s   62.2%  ████████████████████
+10:59:25 | INFO    |   brief             8.61s   19.9%  ██████
+10:59:25 | INFO    |   search            2.88s    6.7%  ██
+10:59:25 | INFO    |   skill_select      1.92s    4.4%  █
+10:59:25 | INFO    |   fetch             1.67s    3.9%  █
+10:59:25 | INFO    |   plan              1.22s    2.8%  █
+10:59:25 | INFO    |   节点合计         43.16s  100.0%
+10:59:25 | INFO    |   图外开销          0.00s    0.0%
+10:59:25 | INFO    |   总耗时           43.16s
+10:59:25 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1877 token | 目录 327 token
+10:59:25 | INFO    | 文件读写 | 已写入 workspace/briefs/brief_20261106_105842.md（2152 字节，sha256=b8489e556701）
+10:59:25 | INFO    | 简报已保存: output\brief_20261106_105842.md
+10:59:25 | INFO    | 统计已保存: output\stats_20261106_105842.json
+10:59:25 | INFO    | ========== 实测结束 ==========
