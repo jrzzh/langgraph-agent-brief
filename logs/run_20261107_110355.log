@@ -1,0 +1,32 @@
+11:03:55 | INFO    | 文件读写 | 读入补充材料 1 个: ['sources/example-mcp.md']（合计 325 字符）
+11:03:55 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 6.17ms
+11:03:55 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+11:03:55 | INFO    | 主题=Agent 记忆机制 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261107_110355
+11:03:55 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator', 'read_file', 'write_file', 'shell'] | workspace 文件读写=启用（补充材料 1 个） | shell 命令=启用
+11:03:55 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+11:03:56 | INFO    | 演示 shell: git --version → rc=0, git version 2.54.0.windows.1 | 白名单: git status/branch/diff/--version；pip list/--version/show/freeze；python --version/-V；where；which
+11:03:58 | INFO    | plan 完成 | 生成查询 ['Agent 记忆机制', 'LLM Agent 记忆', '智能体长期记忆'] | 耗时 2.42s
+11:04:44 | INFO    | 技能路由原始输出: brief-writing | search-strategy | source-triage
+11:04:44 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'search-strategy', 'source-triage'] | 注入正文 2072 字符（mode=lazy） | 耗时 46.01s
+11:04:45 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.08s)
+11:04:47 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 2.78s
+11:04:49 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 1.98s
+11:05:20 | INFO    | verify 完成 | 知识点 493 字符 | 耗时 31.65s
+11:05:46 | INFO    | 简报定稿：正文 380 字（≤500），来源 558 字不计入，压缩 0 次
+11:05:46 | INFO    | brief 完成 | 全文 1018 字符 | 正文 380 字 | 来源 558 字 | 耗时 25.98s
+11:05:46 | INFO    | 总耗时 110.82s | LLM调用 4 次 | token(in=5698, out=15349, 总=21047)
+11:05:46 | INFO    | ---------- 各步骤耗时 ----------
+11:05:46 | INFO    |   skill_select     46.01s   41.5%  █████████████
+11:05:46 | INFO    |   verify           31.65s   28.6%  █████████
+11:05:46 | INFO    |   brief            25.98s   23.4%  ███████
+11:05:46 | INFO    |   search            2.78s    2.5%  █
+11:05:46 | INFO    |   plan              2.42s    2.2%  █
+11:05:46 | INFO    |   fetch             1.98s    1.8%  █
+11:05:46 | INFO    |   节点合计        110.82s  100.0%
+11:05:46 | INFO    |   图外开销          0.00s    0.0%
+11:05:46 | INFO    |   总耗时          110.82s
+11:05:46 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1877 token | 目录 327 token
+11:05:46 | INFO    | 文件读写 | 已写入 workspace/briefs/brief_20261107_110355.md（1946 字节，sha256=02dd271c074e）
+11:05:46 | INFO    | 简报已保存: output\brief_20261107_110355.md
+11:05:46 | INFO    | 统计已保存: output\stats_20261107_110355.json
+11:05:46 | INFO    | ========== 实测结束 ==========

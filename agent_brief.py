@@ -403,15 +403,55 @@ class BriefState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# LLM 实例
+# LLM 实例与采样温度
 # ---------------------------------------------------------------------------
-llm = ChatOpenAI(
-    model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
-    api_key=os.environ["DEEPSEEK_API_KEY"],
-    base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-    temperature=0.3,
-    timeout=60,
-)
+DEFAULT_TEMPERATURE = 0.3
+TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
+
+
+def _build_llm(temperature: float) -> ChatOpenAI:
+    """按给定温度构造模型实例。"""
+    return ChatOpenAI(
+        model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
+        api_key=os.environ["DEEPSEEK_API_KEY"],
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        temperature=temperature,
+        timeout=60,
+    )
+
+
+#: 全局实例；节点通过模块全局名读取，故 set_temperature 重建后立即生效
+llm = _build_llm(DEFAULT_TEMPERATURE)
+
+
+def get_llm() -> ChatOpenAI:
+    """返回当前生效的模型实例（温度可能已被 ``set_temperature`` 改过）。"""
+    return llm
+
+
+def set_temperature(value: float | str) -> float:
+    """调整采样温度（0.0 ~ 2.0），重建模型实例并返回实际生效值。
+
+    温度越高输出越发散。本任务里 ``verify`` / ``brief`` 对稳定性敏感：
+    低于 0.2 容易句式雷同，高于 0.8 容易在数字与来源上跑偏，建议 0.2~0.7。
+    """
+    global llm
+    try:
+        t = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"temperature 必须是数字，收到 {value!r}") from exc
+    if not (TEMPERATURE_MIN <= t <= TEMPERATURE_MAX):
+        raise ValueError(
+            f"temperature 必须在 {TEMPERATURE_MIN}~{TEMPERATURE_MAX} 之间，收到 {t}"
+        )
+    t = round(t, 3)
+    llm = _build_llm(t)
+    return t
+
+
+def current_temperature() -> float:
+    """读取当前实例上生效的温度。"""
+    return float(getattr(llm, "temperature", DEFAULT_TEMPERATURE) or 0.0)
 
 # ---------------------------------------------------------------------------
 # 图节点
@@ -721,20 +761,26 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-def _parse_args() -> tuple[str, str, bool]:
+def _parse_args() -> tuple[str, str, bool, float | None]:
     """解析命令行：位置参数为主题；`--skills=lazy|eager|off` 选择技能加载模式；
-    `--files` 开启 workspace 文件读写。"""
+    `--files` 开启 workspace 文件读写；`--temperature=0.3` 调整采样温度。"""
     topic, mode, files = "大模型上下文工程", "lazy", False
+    temperature: float | None = None
     for a in sys.argv[1:]:
         if a.startswith("--skills="):
             mode = a.split("=", 1)[1].strip().lower()
+        elif a.startswith("--temperature="):
+            try:
+                temperature = float(a.split("=", 1)[1].strip())
+            except ValueError:
+                raise SystemExit(f"--temperature 需要数字，收到 {a!r}")
         elif a in ("--files", "--file-tools"):
             files = True
         elif not a.startswith("-"):
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-    return topic, mode, files
+    return topic, mode, files, temperature
 
 
 def start_run() -> str:
@@ -747,15 +793,19 @@ def start_run() -> str:
 
 
 def run_task(topic: str, skill_mode: str = "lazy",
-             enable_files: bool = False) -> dict:
+             enable_files: bool = False,
+             temperature: float | None = None) -> dict:
     """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files=True`` 时启用 workspace 文件读写：
     运行前把 ``workspace/sources/`` 读入作为补充材料，运行后把简报写入 ``workspace/briefs/``。
+    ``temperature`` 为 None 时沿用当前值（默认 0.3）。
     """
     global REGISTRY, STATS
     STATS = fresh_stats()
+    if temperature is not None:
+        set_temperature(temperature)
     run_id = start_run()
     REGISTRY = None
 
@@ -792,8 +842,9 @@ def run_task(topic: str, skill_mode: str = "lazy",
         log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
 
     log.info("========== LangGraph 统一任务实测开始 ==========")
-    log.info("主题=%s | 模型=%s | 技能模式=%s | 实现=skill_loader | RUN_ID=%s", topic,
-             os.environ.get("DEEPSEEK_MODEL"), skill_mode, run_id)
+    log.info("主题=%s | 模型=%s | 温度=%.2f | 技能模式=%s | 实现=skill_loader | RUN_ID=%s",
+             topic, os.environ.get("DEEPSEEK_MODEL"), current_temperature(),
+             skill_mode, run_id)
     log.info("工具集=%s | workspace 文件读写=%s",
              [t.name for t in get_tools(enable_files)],
              ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭")
@@ -833,6 +884,7 @@ def run_task(topic: str, skill_mode: str = "lazy",
         "file_tools": {"enabled": bool(enable_files and FILES_AVAILABLE),
                        "sources": source_files,
                        "written": []},
+        "temperature": current_temperature(),
         "errors": all_errors,
     }
     log.info("总耗时 %.2fs | LLM调用 %d 次 | token(in=%d, out=%d, 总=%d)",
@@ -887,10 +939,12 @@ def run_task(topic: str, skill_mode: str = "lazy",
 
 
 def main() -> None:
-    topic, skill_mode, enable_files = _parse_args()
-    summary = run_task(topic, skill_mode, enable_files=enable_files)
+    topic, skill_mode, enable_files, temperature = _parse_args()
+    summary = run_task(topic, skill_mode, enable_files=enable_files,
+                       temperature=temperature)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
+    print(f"\n采样温度: {summary.get('temperature')}")
     ft = summary.get("file_tools") or {}
     if ft.get("enabled"):
         print("\n===== workspace 文件读写 =====")
