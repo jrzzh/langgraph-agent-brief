@@ -130,9 +130,11 @@ def _render_run(summary: dict, *, key_prefix: str = "latest") -> None:
     impl = _impl_label(stats)
 
     st.subheader(stats.get("topic") or "（未命名主题）")
+    _temp = stats.get("temperature")
     st.caption(
         f"RUN_ID `{run_id}` ｜ 实现 `{impl}` ｜ "
         f"模型 `{stats.get('model') or os.environ.get('DEEPSEEK_MODEL', '-')}`"
+        + (f" ｜ 温度 `{float(_temp):.2f}`" if _temp is not None else "")
     )
 
     loaded, available = _skills_loaded_count(stats)
@@ -258,6 +260,27 @@ def _run_tab() -> None:
             f"当前该目录下有 {len(ws_files)} 个文本文件。"
         )
 
+    # 采样温度：两种实现共用同一个模型实例，改动立即生效
+    temp_col, hint_col = st.columns([1, 2])
+    with temp_col:
+        temperature = st.number_input(
+            "采样温度",
+            min_value=ab.TEMPERATURE_MIN,
+            max_value=ab.TEMPERATURE_MAX,
+            value=ab.DEFAULT_TEMPERATURE,
+            step=0.05,
+            format="%.2f",
+            help="越低越稳定，越高越发散。本任务建议 0.2~0.7："
+                 "低于 0.2 句式容易雷同，高于 0.8 容易在数字与来源上跑偏。",
+        )
+    with hint_col:
+        if temperature <= 0.15:
+            st.caption("接近确定性输出：同一主题多次运行结果高度相似，适合复现对照。")
+        elif temperature <= 0.7:
+            st.caption("推荐区间：结构稳定，措辞仍有变化。")
+        else:
+            st.caption("⚠ 高温度：句式更活但更容易出现跑题、数字与来源偏差，建议只用于对比实验。")
+
     st.divider()
     if st.button("▶ 运行统一任务", type="primary"):
         if not topic.strip():
@@ -272,10 +295,12 @@ def _run_tab() -> None:
                 if is_deep:
                     import agent_deepagents as dd
 
-                    summary = dd.run_task(topic.strip(), enable_files=enable_files)
+                    summary = dd.run_task(topic.strip(), enable_files=enable_files,
+                                          temperature=temperature)
                 else:
                     summary = ab.run_task(topic.strip(), skill_mode,
-                                          enable_files=enable_files)
+                                          enable_files=enable_files,
+                                          temperature=temperature)
             except Exception as exc:                       # noqa: BLE001 - 界面需显示原因
                 st.error(f"运行失败：{type(exc).__name__}: {exc}")
                 return

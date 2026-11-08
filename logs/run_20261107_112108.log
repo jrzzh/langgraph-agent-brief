@@ -1,0 +1,31 @@
+11:21:08 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 56.53ms
+11:21:08 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+11:21:08 | INFO    | 主题=MCP 的基本架构与适用场景 | 模型=deepseek-flash | 温度=0.10 | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261107_112108
+11:21:08 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator'] | workspace 文件读写=关闭
+11:21:08 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+11:21:10 | INFO    | plan 完成 | 生成查询 ['MCP 基本架构', 'MCP 适用场景', 'Model Context Protocol 架构 应用场景'] | 耗时 2.20s
+11:21:20 | INFO    | 技能路由原始输出: brief-writing | fact-cross-verify | source-triage
+11:21:20 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'fact-cross-verify', 'source-triage'] | 注入正文 2359 字符（mode=lazy） | 耗时 10.28s
+11:21:21 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.22s)
+11:21:23 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 2.70s
+11:21:24 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 1.30s
+11:21:59 | INFO    | verify 完成 | 知识点 564 字符 | 耗时 34.63s
+11:22:19 | WARNING | 简报正文 529 字超限（来源不计入），第 1 次压缩
+11:24:17 | INFO    | 简报定稿：正文 398 字（≤500），来源 431 字不计入，压缩 1 次
+11:24:17 | INFO    | brief 完成 | 全文 913 字符 | 正文 398 字 | 来源 431 字 | 耗时 138.27s
+11:24:17 | INFO    | 总耗时 189.38s | LLM调用 5 次 | token(in=6628, out=33797, 总=40425)
+11:24:17 | INFO    | ---------- 各步骤耗时 ----------
+11:24:17 | INFO    |   brief           138.27s   73.0%  ████████████████████████
+11:24:17 | INFO    |   verify           34.63s   18.3%  ██████
+11:24:17 | INFO    |   skill_select     10.28s    5.4%  █
+11:24:17 | INFO    |   search            2.70s    1.4%  █
+11:24:17 | INFO    |   plan              2.20s    1.2%  █
+11:24:17 | INFO    |   fetch             1.30s    0.7%  █
+11:24:17 | INFO    |   节点合计        189.38s  100.0%
+11:24:17 | INFO    |   图外开销          0.00s    0.0%
+11:24:17 | INFO    |   总耗时          189.38s
+11:24:17 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 2169 token | 目录 327 token
+11:24:17 | WARNING | 故障记录: ['简报正文首次生成超字数(529字)，已触发压缩']
+11:24:17 | INFO    | 简报已保存: output\brief_20261107_112108.md
+11:24:17 | INFO    | 统计已保存: output\stats_20261107_112108.json
+11:24:17 | INFO    | ========== 实测结束 ==========
