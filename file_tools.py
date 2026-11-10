@@ -58,11 +58,73 @@ class FileToolError(Exception):
 
 
 def set_workspace_root(path: str | os.PathLike | None) -> Path:
-    """设置本次运行的文件根目录；传 None 恢复默认的 ``workspace/``。"""
+    """设置本次运行的文件根目录；传 None 恢复默认的 ``workspace/``。
+
+    仅做赋值，**不做安全检查**——对外入口请用 :func:`use_workspace`。
+    """
     global WORKSPACE_ROOT
     WORKSPACE_ROOT = Path(path).expanduser().resolve() if path else DEFAULT_ROOT
     WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
     return WORKSPACE_ROOT
+
+
+def validate_workspace(raw: str | os.PathLike) -> Path:
+    """校验用户指定的 workspace 是否可以作为文件工具根目录。
+
+    默认的 ``<项目>/workspace`` 是项目内子目录，沙箱天然收敛；一旦允许外部目录，
+    就必须挡住那些"一旦指错就等于把机器交出去"的位置：
+
+    - 必须是**已存在的目录**
+    - 拒绝盘符根（``C:\\``）、文件系统根（``/``）
+    - 拒绝用户主目录
+    - 拒绝项目根目录，以及项目根的**祖先**（否则模型能改到本项目源码）
+    - 拒绝含 ``.git`` 的目录（仓库内文本文件多为代码，写入破坏面太大）
+
+    返回解析后的绝对路径；不合法时抛 :class:`FileToolError`。
+    """
+    try:
+        p = Path(raw).expanduser()
+    except (TypeError, ValueError) as exc:
+        raise FileToolError("INVALID_ARGUMENT", f"workspace 路径无法解析: {raw!r}") from exc
+
+    if not p.exists():
+        raise FileToolError("WORKSPACE_NOT_FOUND", f"workspace 目录不存在: {p}")
+    if not p.is_dir():
+        raise FileToolError("WORKSPACE_NOT_DIR", f"workspace 必须是目录: {p}")
+    resolved = p.resolve()
+
+    # 盘符根 / 文件系统根
+    if str(resolved) == resolved.anchor or not resolved.name:
+        raise FileToolError("WORKSPACE_TOO_BROAD", f"不能把 workspace 设成根目录: {resolved}")
+
+    home = Path.home().resolve()
+    if resolved == home:
+        raise FileToolError("WORKSPACE_TOO_BROAD", "不能把 workspace 设成用户主目录")
+
+    project = Path(BASE_DIR).resolve()
+    if resolved == project or resolved in project.parents:
+        raise FileToolError(
+            "WORKSPACE_TOO_BROAD",
+            "不能把 workspace 设成项目目录或其上级目录（会允许模型改写本项目源码）",
+        )
+
+    if (resolved / ".git").exists():
+        raise FileToolError(
+            "WORKSPACE_IS_REPO",
+            "不能把 workspace 设成 git 仓库根目录；请指向仓库内某个子目录",
+        )
+
+    return resolved
+
+
+def use_workspace(raw: str | os.PathLike | None) -> Path:
+    """校验并切换 workspace；``None`` 表示恢复默认目录。
+
+    每次运行开始时都应调用一次（即便传 None），以保证上一轮的自定义目录不会残留。
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return set_workspace_root(None)
+    return set_workspace_root(validate_workspace(raw))
 
 
 def workspace_root() -> Path:

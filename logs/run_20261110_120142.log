@@ -1,0 +1,2 @@
+12:01:42 | INFO    | embedded 模式的一条 INFO
+12:01:42 | INFO    | CLI 模式的一条 INFO，应出现在下面

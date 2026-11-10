@@ -1,0 +1,32 @@
+11:12:57 | INFO    | workspace | 使用自定义目录: D:\桌面\安恒\_ws_test
+11:12:57 | INFO    | 文件读写 | 读入补充材料 1 个: ['sources/material.md']（合计 149 字符）
+11:12:58 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 70.33ms
+11:12:58 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+11:12:58 | INFO    | 主题=MCP 的基本架构与适用场景 | 模型=deepseek-flash | 温度=0.30 | 输出上限=20000 | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261110_111257
+11:12:58 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator', 'read_file', 'write_file'] | workspace 文件读写=启用（补充材料 1 个） | workspace 目录=..\_ws_test
+11:12:58 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+11:12:59 | INFO    | plan 完成 | 生成查询 ['MCP 基本架构', 'Model Context Protocol 架构', 'MCP 适用场景'] | 耗时 1.77s
+11:13:03 | INFO    | 技能路由原始输出: brief-writing | fact-cross-verify | source-triage
+11:13:03 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'fact-cross-verify', 'source-triage'] | 注入正文 2359 字符（mode=lazy） | 耗时 3.28s
+11:13:04 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.59s)
+11:13:06 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 3.50s
+11:13:08 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 2.04s
+11:13:27 | INFO    | verify 完成 | 知识点 485 字符 | 耗时 18.43s
+11:14:01 | INFO    | 简报定稿：正文 431 字（≤500），来源 1526 字不计入，压缩 0 次
+11:14:01 | INFO    | brief 完成 | 全文 2059 字符 | 正文 431 字 | 来源 1526 字 | 耗时 34.40s
+11:14:01 | INFO    | 总耗时 63.42s | LLM调用 4 次 | token(in=7012, out=9255, 总=16267)
+11:14:01 | INFO    | ---------- 各步骤耗时 ----------
+11:14:01 | INFO    |   brief            34.40s   54.2%  ██████████████████
+11:14:01 | INFO    |   verify           18.43s   29.1%  █████████
+11:14:01 | INFO    |   search            3.50s    5.5%  █
+11:14:01 | INFO    |   skill_select      3.28s    5.2%  █
+11:14:01 | INFO    |   fetch             2.04s    3.2%  █
+11:14:01 | INFO    |   plan              1.77s    2.8%  █
+11:14:01 | INFO    |   节点合计         63.42s  100.0%
+11:14:01 | INFO    |   图外开销          0.00s    0.0%
+11:14:01 | INFO    |   总耗时           63.42s
+11:14:01 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 2169 token | 目录 327 token
+11:14:01 | INFO    | 文件读写 | 已写入 workspace/briefs/brief_20261110_111257.md（3111 字节，sha256=24e9f28e02b4）
+11:14:01 | INFO    | 简报已保存: output\brief_20261110_111257.md
+11:14:01 | INFO    | 统计已保存: output\stats_20261110_111257.json
+11:14:01 | INFO    | ========== 实测结束 ==========

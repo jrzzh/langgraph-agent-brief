@@ -94,17 +94,23 @@ def _log_timing_table(total: float) -> None:
 LOG_FILE = os.path.join(LOG_DIR, f"run_{RUN_ID}.log")
 
 
-log = logging.getLogger("langgraph")
+#: 本项目的日志器。**不要用 "langgraph" 这个名字**——那是第三方库的命名空间，
+#: 把它的级别设成 DEBUG 会连带打开框架内部的调试日志，被嵌进别的 UI 时尤其明显。
+log = logging.getLogger("langgraph_brief")
 log.setLevel(logging.DEBUG)
+#: 不往宿主 root logger 冒泡：作为库被嵌入（如 agent-ui）时，日志只进本项目文件，
+#: 不污染宿主的控制台。
+log.propagate = False
 _handlers_ready = False
 
 
-def setup_logging(force: bool = False) -> logging.Logger:
+def setup_logging(force: bool = False, *, console: bool = True) -> logging.Logger:
     """挂载文件与控制台 handler。
 
     延迟到 main()/run_task() 中调用，避免"仅 import 模块"时产生 0 字节日志文件。
     ``force=True`` 会先摘掉旧 handler 再重挂——同一进程内多次运行时切到新日志文件
     （Streamlit UI 会在一次会话里连续跑多次）。
+    ``console=False`` 只写文件，供被外部 UI 嵌入的场景使用。
     """
     global _handlers_ready
     if _handlers_ready and not force:
@@ -119,11 +125,29 @@ def setup_logging(force: bool = False) -> logging.Logger:
     fh = logging.FileHandler(LOG_FILE, encoding="utf-8")     # 文件
     fh.setFormatter(fmt)
     log.addHandler(fh)
-    ch = logging.StreamHandler(sys.stdout)                   # 控制台
-    ch.setFormatter(fmt)
-    log.addHandler(ch)
+    if console:
+        ch = logging.StreamHandler(sys.stdout)               # 控制台（仅命令行/自带界面）
+        ch.setFormatter(fmt)
+        log.addHandler(ch)
     _handlers_ready = True
     return log
+
+
+def setup_run_logging(console: bool = True) -> logging.Logger:
+    """为一次新运行开一个日志文件。
+
+    ``console=True``（本项目命令行/自带界面）：文件 + 控制台双写。
+    ``console=False``（被外部 UI 嵌入）：只写文件，**不输出到宿主控制台**。
+    """
+    global RUN_ID, LOG_FILE
+    RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
+    LOG_FILE = os.path.join(LOG_DIR, f"run_{RUN_ID}.log")
+    return setup_logging(force=True, console=console)
+
+
+def setup_embedded_logging() -> logging.Logger:
+    """被外部 UI 嵌入时启用：新日志文件 + 不打扰宿主控制台。"""
+    return setup_run_logging(console=False)
 
 # ---------------------------------------------------------------------------
 # 全局统计（token 消耗、各节点耗时、故障）
@@ -242,13 +266,27 @@ def _qwen_fetch(url: str) -> str:
     return data.get("content", "")
 
 
+#: XML 声明：lxml 不接受"str 输入 + 声明里带 encoding"，必须先剥掉
+_XML_DECL = re.compile(r"^\s*<\?xml[^>]*\?>\s*", re.I)
+
+
+def _parse_html(text: str):
+    """把已解码的 HTML 字符串交给 lxml。
+
+    lxml 对 ``str`` 输入有个硬限制：若文档开头带 ``<?xml ... encoding=...?>``，
+    会直接抛 ``ValueError: Unicode strings with encoding declaration are not supported``。
+    这类页面（XHTML、部分站点的模板）并不少见，所以统一先剥掉声明再解析。
+    """
+    return html.fromstring(_XML_DECL.sub("", text, count=1))
+
+
 def _bing_search(query: str) -> str:
     """降级后端：Bing HTML 抓取。"""
     r = requests.get("https://cn.bing.com/search",
                      params={"q": query, "count": 10},
                      headers={"User-Agent": UA}, timeout=15)
     r.raise_for_status()
-    tree = html.fromstring(r.text)
+    tree = _parse_html(r.text)
     results = []
     for li in tree.xpath('//li[contains(@class, "b_algo")]'):
         a = li.xpath('.//h2/a')
@@ -301,7 +339,15 @@ def web_search(query: str) -> str:
     msg = f"千问 EnhancedSearch 失败({_root_cause(last)})，已降级 Bing"
     log.warning(msg)
     STATS["errors"].append(msg)
-    return _bing_search(query)
+    # 工具**绝不抛异常**：模型直接调用的场景（如 deepagents）里，一次 ETL/网络失败
+    # 会直接把整轮打断；返回错误文本让模型自行换策略才是正确姿势。
+    try:
+        return _bing_search(query)
+    except Exception as e:                          # noqa: BLE001
+        reason = _root_cause(e)
+        STATS["errors"].append(f"Bing 降级也失败: {reason}")
+        log.warning("Bing 降级也失败: %s", reason)
+        return f"[检索失败: {reason}]"
 
 
 def _http_fetch(url: str) -> str:
@@ -312,7 +358,7 @@ def _http_fetch(url: str) -> str:
     # 处理常见编码
     if r.encoding and r.encoding.lower() in ("iso-8859-1", "ascii"):
         r.encoding = r.apparent_encoding
-    tree = html.fromstring(r.text)
+    tree = _parse_html(r.text)
     for bad in tree.xpath('//script | //style | //nav | //footer | //header | //aside'):
         bad.drop_tree()
     text = " ".join(p.text_content().strip() for p in tree.xpath('//p'))
@@ -338,7 +384,14 @@ def web_fetch(url: str) -> str:
     msg = f"千问 web_fetch 失败({_root_cause(last)})，已降级本地抓取: {url}"
     log.warning(msg)
     STATS["errors"].append(msg)
-    return _http_fetch(url)
+    # 同上：本地抓取失败（404/429/超时/解析失败）也不能抛出去
+    try:
+        return _http_fetch(url)
+    except Exception as e:                          # noqa: BLE001
+        reason = _root_cause(e)
+        STATS["errors"].append(f"本地抓取也失败({url}): {reason}")
+        log.warning("本地抓取也失败 %s: %s", url, reason)
+        return f"[读取失败: {reason}]"
 
 
 @tool
@@ -368,6 +421,8 @@ try:
         list_workspace_files,
         read_file_impl,
         set_workspace_root,
+        use_workspace,
+        validate_workspace,
         write_file_impl,
         workspace_root,
     )
@@ -403,29 +458,73 @@ class BriefState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# LLM 实例与采样温度
+# LLM 实例：采样温度与最大输出 token
 # ---------------------------------------------------------------------------
 DEFAULT_TEMPERATURE = 0.3
 TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
 
+#: 默认不限制输出长度（沿用服务端默认）。本任务单次运行输出可达 1~3 万 token，
+#: 设一个偏小的默认值会直接把简报截断，因此这里保持 None。
+DEFAULT_MAX_TOKENS: int | None = None
+MAX_TOKENS_MIN, MAX_TOKENS_MAX = 1, 200_000
 
-def _build_llm(temperature: float) -> ChatOpenAI:
-    """按给定温度构造模型实例。"""
-    return ChatOpenAI(
-        model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
-        api_key=os.environ["DEEPSEEK_API_KEY"],
-        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+#: 环境里没有密钥时的占位值：只保证 import 与构造不炸，请求时会被服务端拒绝
+_PLACEHOLDER_KEY = "not-configured"
+
+#: 当前生效的采样参数（两个设置项各自独立，共用同一次重建）
+_temperature: float = DEFAULT_TEMPERATURE
+_max_tokens: int | None = DEFAULT_MAX_TOKENS
+
+
+def _build_llm(temperature: float, max_tokens: int | None = None, *,
+               model: str | None = None, api_key: str | None = None,
+               base_url: str | None = None) -> ChatOpenAI:
+    """按给定参数构造模型实例。
+
+    连接信息优先用显式传入的值，其次读环境变量。**缺 key 时用占位值**而不是抛异常：
+    这样 ``import agent_brief`` 在没有配置密钥的环境里也能成功（供外部 UI 做懒加载），
+    真正的失败推迟到第一次请求——比在 import 阶段 KeyError 友好得多。
+    """
+    kwargs = dict(
+        model=model or os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
+        api_key=api_key or os.environ.get("DEEPSEEK_API_KEY") or _PLACEHOLDER_KEY,
+        base_url=base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         temperature=temperature,
         timeout=60,
     )
+    if max_tokens is not None:          # None = 不传，沿用服务端默认
+        kwargs["max_tokens"] = int(max_tokens)
+    return ChatOpenAI(**kwargs)
 
 
-#: 全局实例；节点通过模块全局名读取，故 set_temperature 重建后立即生效
-llm = _build_llm(DEFAULT_TEMPERATURE)
+def build_llm(model: str | None = None, api_key: str | None = None,
+              base_url: str | None = None, temperature: float | None = None,
+              max_tokens: int | None = None) -> ChatOpenAI:
+    """外部集成入口：返回一个独立的模型实例，**不改动全局 llm**。
+
+    供通用 UI（如 agent-ui）按每轮的 ``options`` 现构造模型——它的密钥来自界面上的
+    模型档案，不在环境变量里。
+    """
+    return _build_llm(
+        DEFAULT_TEMPERATURE if temperature is None else float(temperature),
+        None if max_tokens is None else int(max_tokens),
+        model=model, api_key=api_key, base_url=base_url,
+    )
+
+
+def _rebuild() -> ChatOpenAI:
+    """按当前生效的采样参数重建实例。"""
+    global llm
+    llm = _build_llm(_temperature, _max_tokens)
+    return llm
+
+
+#: 全局实例；节点通过模块全局名读取，故重建后立即生效
+llm = _build_llm(_temperature, _max_tokens)
 
 
 def get_llm() -> ChatOpenAI:
-    """返回当前生效的模型实例（温度可能已被 ``set_temperature`` 改过）。"""
+    """返回当前生效的模型实例（参数可能已被 set_* 改过）。"""
     return llm
 
 
@@ -435,7 +534,7 @@ def set_temperature(value: float | str) -> float:
     温度越高输出越发散。本任务里 ``verify`` / ``brief`` 对稳定性敏感：
     低于 0.2 容易句式雷同，高于 0.8 容易在数字与来源上跑偏，建议 0.2~0.7。
     """
-    global llm
+    global _temperature
     try:
         t = float(value)
     except (TypeError, ValueError) as exc:
@@ -444,14 +543,43 @@ def set_temperature(value: float | str) -> float:
         raise ValueError(
             f"temperature 必须在 {TEMPERATURE_MIN}~{TEMPERATURE_MAX} 之间，收到 {t}"
         )
-    t = round(t, 3)
-    llm = _build_llm(t)
-    return t
+    _temperature = round(t, 3)
+    _rebuild()
+    return _temperature
+
+
+def set_max_tokens(value: int | str | None) -> int | None:
+    """调整单次输出上限（1 ~ 200000），``None`` 表示不限；返回实际生效值。
+
+    注意本任务单次运行输出常在 6 千~3 万 token 之间，**设得过小会截断简报**，
+    因此默认不限制。
+    """
+    global _max_tokens
+    if value is None or (isinstance(value, str) and not value.strip()):
+        _max_tokens = None
+        _rebuild()
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"max_tokens 必须是整数，收到 {value!r}") from exc
+    if not (MAX_TOKENS_MIN <= n <= MAX_TOKENS_MAX):
+        raise ValueError(
+            f"max_tokens 必须在 {MAX_TOKENS_MIN}~{MAX_TOKENS_MAX} 之间，收到 {n}"
+        )
+    _max_tokens = n
+    _rebuild()
+    return _max_tokens
 
 
 def current_temperature() -> float:
-    """读取当前实例上生效的温度。"""
-    return float(getattr(llm, "temperature", DEFAULT_TEMPERATURE) or 0.0)
+    """当前生效的采样温度。"""
+    return _temperature
+
+
+def current_max_tokens() -> int | None:
+    """当前生效的输出上限；``None`` 表示不限。"""
+    return _max_tokens
 
 # ---------------------------------------------------------------------------
 # 图节点
@@ -761,11 +889,17 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-def _parse_args() -> tuple[str, str, bool, float | None]:
-    """解析命令行：位置参数为主题；`--skills=lazy|eager|off` 选择技能加载模式；
-    `--files` 开启 workspace 文件读写；`--temperature=0.3` 调整采样温度。"""
+def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None]:
+    """解析命令行。
+
+    位置参数为主题；``--skills=lazy|eager|off`` 选择技能加载模式；
+    ``--files`` 开启 workspace 文件读写；``--temperature=0.3`` 调整采样温度；
+    ``--max-tokens=4096`` 限制单次输出（默认不限）；``--workspace=路径`` 指定文件根目录。
+    """
     topic, mode, files = "大模型上下文工程", "lazy", False
     temperature: float | None = None
+    max_tokens: int | None = None
+    workspace: str | None = None
     for a in sys.argv[1:]:
         if a.startswith("--skills="):
             mode = a.split("=", 1)[1].strip().lower()
@@ -774,13 +908,21 @@ def _parse_args() -> tuple[str, str, bool, float | None]:
                 temperature = float(a.split("=", 1)[1].strip())
             except ValueError:
                 raise SystemExit(f"--temperature 需要数字，收到 {a!r}")
+        elif a.startswith("--max-tokens="):
+            raw = a.split("=", 1)[1].strip()
+            try:
+                max_tokens = int(raw)
+            except ValueError:
+                raise SystemExit(f"--max-tokens 需要整数，收到 {a!r}")
+        elif a.startswith("--workspace="):
+            workspace = a.split("=", 1)[1].strip()
         elif a in ("--files", "--file-tools"):
             files = True
         elif not a.startswith("-"):
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-    return topic, mode, files, temperature
+    return topic, mode, files, temperature, max_tokens, workspace
 
 
 def start_run() -> str:
@@ -794,20 +936,39 @@ def start_run() -> str:
 
 def run_task(topic: str, skill_mode: str = "lazy",
              enable_files: bool = False,
-             temperature: float | None = None) -> dict:
+             temperature: float | None = None,
+             max_tokens: int | None = None,
+             workspace: str | None = None) -> dict:
     """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files=True`` 时启用 workspace 文件读写：
-    运行前把 ``workspace/sources/`` 读入作为补充材料，运行后把简报写入 ``workspace/briefs/``。
-    ``temperature`` 为 None 时沿用当前值（默认 0.3）。
+    运行前把 ``<workspace>/sources/`` 读入作为补充材料，运行后把简报写入 ``<workspace>/briefs/``。
+    ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
+    ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
     global REGISTRY, STATS
     STATS = fresh_stats()
     if temperature is not None:
         set_temperature(temperature)
+    if max_tokens is not None:
+        set_max_tokens(max_tokens)
     run_id = start_run()
     REGISTRY = None
+
+    # workspace：每次运行都重置一次，避免上一轮的自定义目录残留
+    ws_path = None
+    if FILES_AVAILABLE:
+        try:
+            ws_path = use_workspace(workspace)
+            if workspace:
+                log.info("workspace | 使用自定义目录: %s", ws_path)
+        except Exception as e:                      # FileToolError / ValueError
+            code = getattr(e, "code", type(e).__name__)
+            msg = getattr(e, "message", str(e))
+            log.warning("workspace | 拒绝使用 %r [%s] %s，已回退默认目录", workspace, code, msg)
+            STATS["errors"].append(f"workspace 被拒绝[{code}]: {msg}")
+            ws_path = use_workspace(None)
 
     # 文件读写：读入 workspace/sources 作为补充材料（仅在启用时）
     source_text, source_files = "", []
@@ -842,12 +1003,15 @@ def run_task(topic: str, skill_mode: str = "lazy",
         log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
 
     log.info("========== LangGraph 统一任务实测开始 ==========")
-    log.info("主题=%s | 模型=%s | 温度=%.2f | 技能模式=%s | 实现=skill_loader | RUN_ID=%s",
+    _mt = current_max_tokens()
+    log.info("主题=%s | 模型=%s | 温度=%.2f | 输出上限=%s | 技能模式=%s | "
+             "实现=skill_loader | RUN_ID=%s",
              topic, os.environ.get("DEEPSEEK_MODEL"), current_temperature(),
-             skill_mode, run_id)
-    log.info("工具集=%s | workspace 文件读写=%s",
+             f"{_mt}" if _mt is not None else "不限", skill_mode, run_id)
+    log.info("工具集=%s | workspace 文件读写=%s | workspace 目录=%s",
              [t.name for t in get_tools(enable_files)],
-             ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭")
+             ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭",
+             _rel(str(ws_path)) if ws_path else "默认")
 
     # 用计算器工具做一次演示调用（工具调用稳定性 + 参数校验测试）
     log.info("演示 calculator: 2**10 + 3*7 = %s",
@@ -883,8 +1047,10 @@ def run_task(topic: str, skill_mode: str = "lazy",
         "token_total": STATS["token_input"] + STATS["token_output"],
         "file_tools": {"enabled": bool(enable_files and FILES_AVAILABLE),
                        "sources": source_files,
-                       "written": []},
+                       "written": [],
+                       "workspace": _rel(str(ws_path)) if ws_path else ""},
         "temperature": current_temperature(),
+        "max_tokens": current_max_tokens(),
         "errors": all_errors,
     }
     log.info("总耗时 %.2fs | LLM调用 %d 次 | token(in=%d, out=%d, 总=%d)",
@@ -905,14 +1071,15 @@ def run_task(topic: str, skill_mode: str = "lazy",
     with open(brief_path, "w", encoding="utf-8") as f:
         f.write(brief_text)
 
-    # 文件读写：把简报写入 workspace/briefs/（演示 write_file，默认不覆盖）
+    # 文件读写：把简报写入 <workspace>/briefs/（演示 write_file，默认不覆盖）
     if enable_files and FILES_AVAILABLE and brief_text.strip():
         rel_out = f"briefs/brief_{run_id}.md"
         try:
             res = write_file_impl(rel_out, brief_text, overwrite=False)
             summary["file_tools"]["written"].append(res["path"])
             STATS["tool_calls"]["write_file"] = 1
-            log.info("文件读写 | 已写入 workspace/%s（%d 字节，sha256=%s）",
+            log.info("文件读写 | 已写入 %s/%s（%d 字节，sha256=%s）",
+                     _rel(str(ws_path)) if ws_path else "workspace",
                      res["path"], res["bytes_written"], res["sha256"][:12])
         except Exception as e:                      # noqa: BLE001 - 写入失败不影响主流程
             code = getattr(e, "code", type(e).__name__)
@@ -939,15 +1106,18 @@ def run_task(topic: str, skill_mode: str = "lazy",
 
 
 def main() -> None:
-    topic, skill_mode, enable_files, temperature = _parse_args()
+    topic, skill_mode, enable_files, temperature, max_tokens, workspace = _parse_args()
     summary = run_task(topic, skill_mode, enable_files=enable_files,
-                       temperature=temperature)
+                       temperature=temperature, max_tokens=max_tokens,
+                       workspace=workspace)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
-    print(f"\n采样温度: {summary.get('temperature')}")
+    print(f"\n采样温度: {summary.get('temperature')} ｜ "
+          f"输出上限: {summary.get('max_tokens') if summary.get('max_tokens') else '不限'}")
     ft = summary.get("file_tools") or {}
     if ft.get("enabled"):
         print("\n===== workspace 文件读写 =====")
+        print(f"  目录        : {ft.get('workspace') or '（默认）'}")
         print(f"  读入补充材料: {ft.get('sources') or '无'}")
         print(f"  写入简报    : {ft.get('written') or '无'}")
 

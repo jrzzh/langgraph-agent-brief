@@ -44,16 +44,34 @@ from deepagents.backends.filesystem import FilesystemBackend
 
 from agent_brief import (
     BASE_DIR,
+    FILES_AVAILABLE,
     LOG_DIR,
     OUT_DIR,
     _rel,
+    current_max_tokens,
     current_temperature,
     get_llm,
     get_tools,
+    set_max_tokens,
     set_temperature,
+    setup_embedded_logging,
+    setup_run_logging,
+    use_workspace,
 )
 
 SKILLS_SOURCE = "/skills/"          # 相对 backend root，deepagents 要求正斜杠
+
+#: 默认系统提示。deepagents 会把它**追加在**自己的基础提示之前，
+#: 因此技能机制照常工作，这里只约束"怎么说话"：
+#: 模型默认爱先汇报"我将要做什么、我读了哪个技能"，那属于过程噪声，不是用户要的答案。
+DEFAULT_SYSTEM_PROMPT = """\
+你是技术调研助手。回答时务必遵守：
+
+- **直接给出最终答案**，不要叙述计划和过程（例如"我先读取技能说明""接下来我会检索"），
+  也不要汇报你读了哪些技能、调用了哪些工具；
+- 不要整段复述工具返回的原文，只提炼与问题相关的结论；
+- 需要检索就直接调用工具，拿到结果后径直作答，不要边做边解说。
+"""
 SKILLS_DIR = os.path.join(BASE_DIR, "skills")
 
 # 从工具入参里解析技能路径：skills/<name>/SKILL.md（兼容正反斜杠）
@@ -337,20 +355,80 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
     return L
 
 
+def build_agent(llm=None, workspace: str | None = None,
+                enable_files: bool = True,
+                temperature: float | None = None,
+                max_tokens: int | None = None,
+                system_prompt: str | None = None,
+                *, embedded: bool = True):
+    """构造一个可直接 ``.stream()`` 的 deepagents 图（外部集成入口）。
+
+    供通用 UI（如 agent-ui）按每轮请求现构造：模型实例由调用方传入，
+    ``workspace`` 会作为文件工具的根目录。返回的是 LangGraph 编译后的图，
+    调用方可用 ``agent.stream({"messages": [...]}, stream_mode=["messages","updates"])``
+    同时拿到 token 流与节点更新。
+
+    ``embedded=True``（默认）：日志只写本项目文件，**不输出到宿主控制台**——
+                作为库被 UI 嵌入时不该污染别人的终端。每次调用开一个新的日志文件。
+    ``embedded=False``：保留控制台输出，供本项目自己的命令行入口使用。
+    ``system_prompt=None`` 时用 :data:`DEFAULT_SYSTEM_PROMPT`；传空串表示不加自定义提示。
+    """
+    if temperature is not None:
+        set_temperature(temperature)
+    if max_tokens is not None:
+        set_max_tokens(max_tokens)
+    if embedded:
+        setup_run_logging(console=False)      # 外部 UI：只写文件
+    else:
+        setup_run_logging(console=True)       # 本项目入口：文件 + 控制台
+    if FILES_AVAILABLE:
+        try:
+            use_workspace(workspace)
+        except Exception:                       # 非法目录回退默认，不阻断构建
+            use_workspace(None)
+
+    tools = get_tools(enable_files)
+    backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
+    return create_deep_agent(
+        model=llm if llm is not None else get_llm(),
+        tools=tools,
+        backend=backend,
+        skills=[SKILLS_SOURCE],
+        # deepagents 会把这段**追加在**它自己的基础提示之前，所以技能机制不受影响，
+        # 只是把"汇报过程"这类噪声压下去（模型默认爱说"我先读一下技能…"）
+        system_prompt=(
+            DEFAULT_SYSTEM_PROMPT if system_prompt is None else system_prompt
+        ) or None,
+    )
+
+
 def run_task(topic: str = "大模型上下文工程",
              enable_files: bool = False,
-             temperature: float | None = None) -> dict:
+             temperature: float | None = None,
+             max_tokens: int | None = None,
+             workspace: str | None = None) -> dict:
     """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files`` 把 workspace 文件读写工具交给模型自主调用；
-    ``temperature`` 为 None 时沿用当前值（默认 0.3）。
+    ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
+    ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
     if temperature is not None:
         set_temperature(temperature)
+    if max_tokens is not None:
+        set_max_tokens(max_tokens)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(LOG_DIR, exist_ok=True)
     tools = get_tools(enable_files)
+
+    # workspace：每次运行都重置一次，避免上一轮的自定义目录残留
+    ws_path = None
+    if FILES_AVAILABLE:
+        try:
+            ws_path = use_workspace(workspace)
+        except Exception:                       # 非法目录静默回退，具体原因在 agent_brief 侧记录
+            ws_path = use_workspace(None)
 
     log_path = os.path.join(LOG_DIR, f"deepagents_{run_id}.log")
     captured: list[str] = []
@@ -366,19 +444,17 @@ def run_task(topic: str = "大模型上下文工程",
 
         emit([f"========== deepagents 原生 Skills 启动 RUN_ID={run_id} ==========",
               f"主题={topic} | 模型={os.environ.get('DEEPSEEK_MODEL')} | "
-              f"温度={current_temperature():.2f} | 技能源={SKILLS_SOURCE}",
+              f"温度={current_temperature():.2f} | "
+              f"输出上限={current_max_tokens() if current_max_tokens() else '不限'} | "
+              f"技能源={SKILLS_SOURCE}",
               f"工具集={[t.name for t in tools]} | workspace 文件读写="
-              f"{'启用' if enable_files else '关闭'}"])
+              f"{'启用' if enable_files else '关闭'} | "
+              f"workspace 目录={_rel(str(ws_path)) if ws_path else '默认'}"])
 
         # ---- 构建 ----
         t_build = time.time()
-        backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
-        agent = create_deep_agent(
-            model=get_llm(),
-            tools=tools,
-            backend=backend,
-            skills=[SKILLS_SOURCE],
-        )
+        agent = build_agent(llm=get_llm(), workspace=None, enable_files=enable_files,
+                            embedded=False)      # 本项目自己的入口：保留控制台输出
         build_s = round(time.time() - t_build, 2)
 
         # ---- 执行（回调采集）----
@@ -417,6 +493,8 @@ def run_task(topic: str = "大模型上下文工程",
             "topic": topic,
             "model": os.environ.get("DEEPSEEK_MODEL"),
             "temperature": current_temperature(),
+            "max_tokens": current_max_tokens(),
+            "workspace": _rel(str(ws_path)) if ws_path else "",
             "skills_source": SKILLS_SOURCE,
             "skills_disclosure": "3 级：metadata -> SKILL.md(read_file) -> resources",
             "messages": len(msgs),
@@ -447,16 +525,28 @@ def main() -> None:
     topic = args[0] if args else "大模型上下文工程"
     enable_files = any(a in ("--files", "--file-tools") for a in sys.argv[1:])
     temperature = None
+    max_tokens = None
+    workspace = None
     for a in sys.argv[1:]:
         if a.startswith("--temperature="):
             try:
                 temperature = float(a.split("=", 1)[1].strip())
             except ValueError:
                 raise SystemExit(f"--temperature 需要数字，收到 {a!r}")
-    summary = run_task(topic, enable_files=enable_files, temperature=temperature)
+        elif a.startswith("--max-tokens="):
+            try:
+                max_tokens = int(a.split("=", 1)[1].strip())
+            except ValueError:
+                raise SystemExit(f"--max-tokens 需要整数，收到 {a!r}")
+        elif a.startswith("--workspace="):
+            workspace = a.split("=", 1)[1].strip()
+    summary = run_task(topic, enable_files=enable_files, temperature=temperature,
+                       max_tokens=max_tokens, workspace=workspace)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
-    print(f"\n采样温度: {summary.get('temperature')}")
+    print(f"\n采样温度: {summary.get('temperature')} ｜ "
+          f"输出上限: {summary.get('max_tokens') if summary.get('max_tokens') else '不限'} ｜ "
+          f"workspace: {summary.get('workspace') or '（默认）'}")
 
 
 if __name__ == "__main__":
