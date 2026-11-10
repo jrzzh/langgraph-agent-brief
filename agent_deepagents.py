@@ -341,6 +341,37 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
     return L
 
 
+def build_agent(llm=None, workspace: str | None = None,
+                enable_files: bool = True,
+                temperature: float | None = None,
+                max_tokens: int | None = None):
+    """构造一个可直接 ``.stream()`` 的 deepagents 图（外部集成入口）。
+
+    供通用 UI（如 agent-ui）按每轮请求现构造：模型实例由调用方传入，
+    ``workspace`` 会作为文件工具的根目录。返回的是 LangGraph 编译后的图，
+    调用方可用 ``agent.stream({"messages": [...]}, stream_mode=["messages","updates"])``
+    同时拿到 token 流与节点更新。
+    """
+    if temperature is not None:
+        set_temperature(temperature)
+    if max_tokens is not None:
+        set_max_tokens(max_tokens)
+    if FILES_AVAILABLE:
+        try:
+            use_workspace(workspace)
+        except Exception:                       # 非法目录回退默认，不阻断构建
+            use_workspace(None)
+
+    tools = get_tools(enable_files)
+    backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
+    return create_deep_agent(
+        model=llm if llm is not None else get_llm(),
+        tools=tools,
+        backend=backend,
+        skills=[SKILLS_SOURCE],
+    )
+
+
 def run_task(topic: str = "大模型上下文工程",
              enable_files: bool = False,
              temperature: float | None = None,
@@ -392,13 +423,7 @@ def run_task(topic: str = "大模型上下文工程",
 
         # ---- 构建 ----
         t_build = time.time()
-        backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
-        agent = create_deep_agent(
-            model=get_llm(),
-            tools=tools,
-            backend=backend,
-            skills=[SKILLS_SOURCE],
-        )
+        agent = build_agent(llm=get_llm(), workspace=None, enable_files=enable_files)
         build_s = round(time.time() - t_build, 2)
 
         # ---- 执行（回调采集）----

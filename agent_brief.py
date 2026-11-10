@@ -415,23 +415,48 @@ TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
 DEFAULT_MAX_TOKENS: int | None = None
 MAX_TOKENS_MIN, MAX_TOKENS_MAX = 1, 200_000
 
+#: 环境里没有密钥时的占位值：只保证 import 与构造不炸，请求时会被服务端拒绝
+_PLACEHOLDER_KEY = "not-configured"
+
 #: 当前生效的采样参数（两个设置项各自独立，共用同一次重建）
 _temperature: float = DEFAULT_TEMPERATURE
 _max_tokens: int | None = DEFAULT_MAX_TOKENS
 
 
-def _build_llm(temperature: float, max_tokens: int | None = None) -> ChatOpenAI:
-    """按给定采样参数构造模型实例。"""
+def _build_llm(temperature: float, max_tokens: int | None = None, *,
+               model: str | None = None, api_key: str | None = None,
+               base_url: str | None = None) -> ChatOpenAI:
+    """按给定参数构造模型实例。
+
+    连接信息优先用显式传入的值，其次读环境变量。**缺 key 时用占位值**而不是抛异常：
+    这样 ``import agent_brief`` 在没有配置密钥的环境里也能成功（供外部 UI 做懒加载），
+    真正的失败推迟到第一次请求——比在 import 阶段 KeyError 友好得多。
+    """
     kwargs = dict(
-        model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
-        api_key=os.environ["DEEPSEEK_API_KEY"],
-        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        model=model or os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
+        api_key=api_key or os.environ.get("DEEPSEEK_API_KEY") or _PLACEHOLDER_KEY,
+        base_url=base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         temperature=temperature,
         timeout=60,
     )
     if max_tokens is not None:          # None = 不传，沿用服务端默认
         kwargs["max_tokens"] = int(max_tokens)
     return ChatOpenAI(**kwargs)
+
+
+def build_llm(model: str | None = None, api_key: str | None = None,
+              base_url: str | None = None, temperature: float | None = None,
+              max_tokens: int | None = None) -> ChatOpenAI:
+    """外部集成入口：返回一个独立的模型实例，**不改动全局 llm**。
+
+    供通用 UI（如 agent-ui）按每轮的 ``options`` 现构造模型——它的密钥来自界面上的
+    模型档案，不在环境变量里。
+    """
+    return _build_llm(
+        DEFAULT_TEMPERATURE if temperature is None else float(temperature),
+        None if max_tokens is None else int(max_tokens),
+        model=model, api_key=api_key, base_url=base_url,
+    )
 
 
 def _rebuild() -> ChatOpenAI:
