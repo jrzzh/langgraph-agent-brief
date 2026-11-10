@@ -131,10 +131,14 @@ def _render_run(summary: dict, *, key_prefix: str = "latest") -> None:
 
     st.subheader(stats.get("topic") or "（未命名主题）")
     _temp = stats.get("temperature")
+    _mt = stats.get("max_tokens")
+    _ws = (stats.get("file_tools") or {}).get("workspace") or stats.get("workspace") or ""
     st.caption(
         f"RUN_ID `{run_id}` ｜ 实现 `{impl}` ｜ "
         f"模型 `{stats.get('model') or os.environ.get('DEEPSEEK_MODEL', '-')}`"
         + (f" ｜ 温度 `{float(_temp):.2f}`" if _temp is not None else "")
+        + (f" ｜ 输出上限 `{_mt}`" if _mt else " ｜ 输出上限 `不限`")
+        + (f" ｜ workspace `{_ws}`" if _ws else "")
     )
 
     loaded, available = _skills_loaded_count(stats)
@@ -253,15 +257,22 @@ def _run_tab() -> None:
         help="开启后：运行前读取 workspace/sources/ 作为补充材料，运行后把简报写入 workspace/briefs/；"
              "deepagents 实现下则由模型自主决定何时读写。",
     )
+    ws_dir = ""
     if enable_files:
+        ws_dir = st.text_input(
+            "workspace 目录（留空 = 项目内 `workspace/`）",
+            value="",
+            placeholder=r"例如：D:\资料\某课题素材",
+            help="读写范围会被限制在这个目录里（sources/ 读入、briefs/ 写出）。"
+                 "不允许指向盘符根、用户主目录、项目目录及其上级、或 git 仓库根。",
+        )
         ws_files = ab.list_workspace_files() if ab.FILES_AVAILABLE else []
         st.caption(
-            f"文件边界：读写仅限项目内 `workspace/`，写入默认不覆盖。"
-            f"当前该目录下有 {len(ws_files)} 个文本文件。"
+            f"文件边界：写入默认不覆盖；当前目录下有 {len(ws_files)} 个文本文件。"
         )
 
-    # 采样温度：两种实现共用同一个模型实例，改动立即生效
-    temp_col, hint_col = st.columns([1, 2])
+    # 采样参数：两种实现共用同一个模型实例，改动立即生效
+    temp_col, max_col, hint_col = st.columns([1, 1, 2])
     with temp_col:
         temperature = st.number_input(
             "采样温度",
@@ -273,13 +284,26 @@ def _run_tab() -> None:
             help="越低越稳定，越高越发散。本任务建议 0.2~0.7："
                  "低于 0.2 句式容易雷同，高于 0.8 容易在数字与来源上跑偏。",
         )
+    with max_col:
+        _max_tokens_raw = st.number_input(
+            "最大输出 token（0 = 不限）",
+            min_value=0,
+            max_value=ab.MAX_TOKENS_MAX,
+            value=0,
+            step=256,
+            help="默认不限。本任务单次运行输出常在 6 千~3 万 token 之间，"
+                 "设得过小会把简报截断。",
+        )
+        max_tokens = int(_max_tokens_raw) if _max_tokens_raw else None
     with hint_col:
         if temperature <= 0.15:
             st.caption("接近确定性输出：同一主题多次运行结果高度相似，适合复现对照。")
         elif temperature <= 0.7:
             st.caption("推荐区间：结构稳定，措辞仍有变化。")
         else:
-            st.caption("⚠ 高温度：句式更活但更容易出现跑题、数字与来源偏差，建议只用于对比实验。")
+            st.caption("⚠ 高温度：句式更活但更容易出现跑题、数字与来源偏差。")
+        if max_tokens is not None and max_tokens < 4000:
+            st.caption(f"⚠ 输出上限 {max_tokens} token 偏小，可能截断简报正文。")
 
     st.divider()
     if st.button("▶ 运行统一任务", type="primary"):
@@ -292,15 +316,18 @@ def _run_tab() -> None:
         label = f"运行中……（实现 {impl}" + ("" if is_deep else f" / 技能 {skill_mode}") + "）"
         with st.spinner(label):
             try:
+                _ws = ws_dir.strip() or None
                 if is_deep:
                     import agent_deepagents as dd
 
                     summary = dd.run_task(topic.strip(), enable_files=enable_files,
-                                          temperature=temperature)
+                                          temperature=temperature,
+                                          max_tokens=max_tokens, workspace=_ws)
                 else:
                     summary = ab.run_task(topic.strip(), skill_mode,
                                           enable_files=enable_files,
-                                          temperature=temperature)
+                                          temperature=temperature,
+                                          max_tokens=max_tokens, workspace=_ws)
             except Exception as exc:                       # noqa: BLE001 - 界面需显示原因
                 st.error(f"运行失败：{type(exc).__name__}: {exc}")
                 return

@@ -368,6 +368,8 @@ try:
         list_workspace_files,
         read_file_impl,
         set_workspace_root,
+        use_workspace,
+        validate_workspace,
         write_file_impl,
         workspace_root,
     )
@@ -403,29 +405,48 @@ class BriefState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# LLM 实例与采样温度
+# LLM 实例：采样温度与最大输出 token
 # ---------------------------------------------------------------------------
 DEFAULT_TEMPERATURE = 0.3
 TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
 
+#: 默认不限制输出长度（沿用服务端默认）。本任务单次运行输出可达 1~3 万 token，
+#: 设一个偏小的默认值会直接把简报截断，因此这里保持 None。
+DEFAULT_MAX_TOKENS: int | None = None
+MAX_TOKENS_MIN, MAX_TOKENS_MAX = 1, 200_000
 
-def _build_llm(temperature: float) -> ChatOpenAI:
-    """按给定温度构造模型实例。"""
-    return ChatOpenAI(
+#: 当前生效的采样参数（两个设置项各自独立，共用同一次重建）
+_temperature: float = DEFAULT_TEMPERATURE
+_max_tokens: int | None = DEFAULT_MAX_TOKENS
+
+
+def _build_llm(temperature: float, max_tokens: int | None = None) -> ChatOpenAI:
+    """按给定采样参数构造模型实例。"""
+    kwargs = dict(
         model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
         api_key=os.environ["DEEPSEEK_API_KEY"],
         base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         temperature=temperature,
         timeout=60,
     )
+    if max_tokens is not None:          # None = 不传，沿用服务端默认
+        kwargs["max_tokens"] = int(max_tokens)
+    return ChatOpenAI(**kwargs)
 
 
-#: 全局实例；节点通过模块全局名读取，故 set_temperature 重建后立即生效
-llm = _build_llm(DEFAULT_TEMPERATURE)
+def _rebuild() -> ChatOpenAI:
+    """按当前生效的采样参数重建实例。"""
+    global llm
+    llm = _build_llm(_temperature, _max_tokens)
+    return llm
+
+
+#: 全局实例；节点通过模块全局名读取，故重建后立即生效
+llm = _build_llm(_temperature, _max_tokens)
 
 
 def get_llm() -> ChatOpenAI:
-    """返回当前生效的模型实例（温度可能已被 ``set_temperature`` 改过）。"""
+    """返回当前生效的模型实例（参数可能已被 set_* 改过）。"""
     return llm
 
 
@@ -435,7 +456,7 @@ def set_temperature(value: float | str) -> float:
     温度越高输出越发散。本任务里 ``verify`` / ``brief`` 对稳定性敏感：
     低于 0.2 容易句式雷同，高于 0.8 容易在数字与来源上跑偏，建议 0.2~0.7。
     """
-    global llm
+    global _temperature
     try:
         t = float(value)
     except (TypeError, ValueError) as exc:
@@ -444,14 +465,43 @@ def set_temperature(value: float | str) -> float:
         raise ValueError(
             f"temperature 必须在 {TEMPERATURE_MIN}~{TEMPERATURE_MAX} 之间，收到 {t}"
         )
-    t = round(t, 3)
-    llm = _build_llm(t)
-    return t
+    _temperature = round(t, 3)
+    _rebuild()
+    return _temperature
+
+
+def set_max_tokens(value: int | str | None) -> int | None:
+    """调整单次输出上限（1 ~ 200000），``None`` 表示不限；返回实际生效值。
+
+    注意本任务单次运行输出常在 6 千~3 万 token 之间，**设得过小会截断简报**，
+    因此默认不限制。
+    """
+    global _max_tokens
+    if value is None or (isinstance(value, str) and not value.strip()):
+        _max_tokens = None
+        _rebuild()
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"max_tokens 必须是整数，收到 {value!r}") from exc
+    if not (MAX_TOKENS_MIN <= n <= MAX_TOKENS_MAX):
+        raise ValueError(
+            f"max_tokens 必须在 {MAX_TOKENS_MIN}~{MAX_TOKENS_MAX} 之间，收到 {n}"
+        )
+    _max_tokens = n
+    _rebuild()
+    return _max_tokens
 
 
 def current_temperature() -> float:
-    """读取当前实例上生效的温度。"""
-    return float(getattr(llm, "temperature", DEFAULT_TEMPERATURE) or 0.0)
+    """当前生效的采样温度。"""
+    return _temperature
+
+
+def current_max_tokens() -> int | None:
+    """当前生效的输出上限；``None`` 表示不限。"""
+    return _max_tokens
 
 # ---------------------------------------------------------------------------
 # 图节点
@@ -761,11 +811,17 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-def _parse_args() -> tuple[str, str, bool, float | None]:
-    """解析命令行：位置参数为主题；`--skills=lazy|eager|off` 选择技能加载模式；
-    `--files` 开启 workspace 文件读写；`--temperature=0.3` 调整采样温度。"""
+def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None]:
+    """解析命令行。
+
+    位置参数为主题；``--skills=lazy|eager|off`` 选择技能加载模式；
+    ``--files`` 开启 workspace 文件读写；``--temperature=0.3`` 调整采样温度；
+    ``--max-tokens=4096`` 限制单次输出（默认不限）；``--workspace=路径`` 指定文件根目录。
+    """
     topic, mode, files = "大模型上下文工程", "lazy", False
     temperature: float | None = None
+    max_tokens: int | None = None
+    workspace: str | None = None
     for a in sys.argv[1:]:
         if a.startswith("--skills="):
             mode = a.split("=", 1)[1].strip().lower()
@@ -774,13 +830,21 @@ def _parse_args() -> tuple[str, str, bool, float | None]:
                 temperature = float(a.split("=", 1)[1].strip())
             except ValueError:
                 raise SystemExit(f"--temperature 需要数字，收到 {a!r}")
+        elif a.startswith("--max-tokens="):
+            raw = a.split("=", 1)[1].strip()
+            try:
+                max_tokens = int(raw)
+            except ValueError:
+                raise SystemExit(f"--max-tokens 需要整数，收到 {a!r}")
+        elif a.startswith("--workspace="):
+            workspace = a.split("=", 1)[1].strip()
         elif a in ("--files", "--file-tools"):
             files = True
         elif not a.startswith("-"):
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-    return topic, mode, files, temperature
+    return topic, mode, files, temperature, max_tokens, workspace
 
 
 def start_run() -> str:
@@ -794,20 +858,39 @@ def start_run() -> str:
 
 def run_task(topic: str, skill_mode: str = "lazy",
              enable_files: bool = False,
-             temperature: float | None = None) -> dict:
+             temperature: float | None = None,
+             max_tokens: int | None = None,
+             workspace: str | None = None) -> dict:
     """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files=True`` 时启用 workspace 文件读写：
-    运行前把 ``workspace/sources/`` 读入作为补充材料，运行后把简报写入 ``workspace/briefs/``。
-    ``temperature`` 为 None 时沿用当前值（默认 0.3）。
+    运行前把 ``<workspace>/sources/`` 读入作为补充材料，运行后把简报写入 ``<workspace>/briefs/``。
+    ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
+    ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
     global REGISTRY, STATS
     STATS = fresh_stats()
     if temperature is not None:
         set_temperature(temperature)
+    if max_tokens is not None:
+        set_max_tokens(max_tokens)
     run_id = start_run()
     REGISTRY = None
+
+    # workspace：每次运行都重置一次，避免上一轮的自定义目录残留
+    ws_path = None
+    if FILES_AVAILABLE:
+        try:
+            ws_path = use_workspace(workspace)
+            if workspace:
+                log.info("workspace | 使用自定义目录: %s", ws_path)
+        except Exception as e:                      # FileToolError / ValueError
+            code = getattr(e, "code", type(e).__name__)
+            msg = getattr(e, "message", str(e))
+            log.warning("workspace | 拒绝使用 %r [%s] %s，已回退默认目录", workspace, code, msg)
+            STATS["errors"].append(f"workspace 被拒绝[{code}]: {msg}")
+            ws_path = use_workspace(None)
 
     # 文件读写：读入 workspace/sources 作为补充材料（仅在启用时）
     source_text, source_files = "", []
@@ -842,12 +925,15 @@ def run_task(topic: str, skill_mode: str = "lazy",
         log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
 
     log.info("========== LangGraph 统一任务实测开始 ==========")
-    log.info("主题=%s | 模型=%s | 温度=%.2f | 技能模式=%s | 实现=skill_loader | RUN_ID=%s",
+    _mt = current_max_tokens()
+    log.info("主题=%s | 模型=%s | 温度=%.2f | 输出上限=%s | 技能模式=%s | "
+             "实现=skill_loader | RUN_ID=%s",
              topic, os.environ.get("DEEPSEEK_MODEL"), current_temperature(),
-             skill_mode, run_id)
-    log.info("工具集=%s | workspace 文件读写=%s",
+             f"{_mt}" if _mt is not None else "不限", skill_mode, run_id)
+    log.info("工具集=%s | workspace 文件读写=%s | workspace 目录=%s",
              [t.name for t in get_tools(enable_files)],
-             ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭")
+             ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭",
+             _rel(str(ws_path)) if ws_path else "默认")
 
     # 用计算器工具做一次演示调用（工具调用稳定性 + 参数校验测试）
     log.info("演示 calculator: 2**10 + 3*7 = %s",
@@ -883,8 +969,10 @@ def run_task(topic: str, skill_mode: str = "lazy",
         "token_total": STATS["token_input"] + STATS["token_output"],
         "file_tools": {"enabled": bool(enable_files and FILES_AVAILABLE),
                        "sources": source_files,
-                       "written": []},
+                       "written": [],
+                       "workspace": _rel(str(ws_path)) if ws_path else ""},
         "temperature": current_temperature(),
+        "max_tokens": current_max_tokens(),
         "errors": all_errors,
     }
     log.info("总耗时 %.2fs | LLM调用 %d 次 | token(in=%d, out=%d, 总=%d)",
@@ -905,14 +993,15 @@ def run_task(topic: str, skill_mode: str = "lazy",
     with open(brief_path, "w", encoding="utf-8") as f:
         f.write(brief_text)
 
-    # 文件读写：把简报写入 workspace/briefs/（演示 write_file，默认不覆盖）
+    # 文件读写：把简报写入 <workspace>/briefs/（演示 write_file，默认不覆盖）
     if enable_files and FILES_AVAILABLE and brief_text.strip():
         rel_out = f"briefs/brief_{run_id}.md"
         try:
             res = write_file_impl(rel_out, brief_text, overwrite=False)
             summary["file_tools"]["written"].append(res["path"])
             STATS["tool_calls"]["write_file"] = 1
-            log.info("文件读写 | 已写入 workspace/%s（%d 字节，sha256=%s）",
+            log.info("文件读写 | 已写入 %s/%s（%d 字节，sha256=%s）",
+                     _rel(str(ws_path)) if ws_path else "workspace",
                      res["path"], res["bytes_written"], res["sha256"][:12])
         except Exception as e:                      # noqa: BLE001 - 写入失败不影响主流程
             code = getattr(e, "code", type(e).__name__)
@@ -939,15 +1028,18 @@ def run_task(topic: str, skill_mode: str = "lazy",
 
 
 def main() -> None:
-    topic, skill_mode, enable_files, temperature = _parse_args()
+    topic, skill_mode, enable_files, temperature, max_tokens, workspace = _parse_args()
     summary = run_task(topic, skill_mode, enable_files=enable_files,
-                       temperature=temperature)
+                       temperature=temperature, max_tokens=max_tokens,
+                       workspace=workspace)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
-    print(f"\n采样温度: {summary.get('temperature')}")
+    print(f"\n采样温度: {summary.get('temperature')} ｜ "
+          f"输出上限: {summary.get('max_tokens') if summary.get('max_tokens') else '不限'}")
     ft = summary.get("file_tools") or {}
     if ft.get("enabled"):
         print("\n===== workspace 文件读写 =====")
+        print(f"  目录        : {ft.get('workspace') or '（默认）'}")
         print(f"  读入补充材料: {ft.get('sources') or '无'}")
         print(f"  写入简报    : {ft.get('written') or '无'}")
 

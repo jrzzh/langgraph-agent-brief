@@ -44,13 +44,17 @@ from deepagents.backends.filesystem import FilesystemBackend
 
 from agent_brief import (
     BASE_DIR,
+    FILES_AVAILABLE,
     LOG_DIR,
     OUT_DIR,
     _rel,
+    current_max_tokens,
     current_temperature,
     get_llm,
     get_tools,
+    set_max_tokens,
     set_temperature,
+    use_workspace,
 )
 
 SKILLS_SOURCE = "/skills/"          # 相对 backend root，deepagents 要求正斜杠
@@ -339,18 +343,31 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
 
 def run_task(topic: str = "大模型上下文工程",
              enable_files: bool = False,
-             temperature: float | None = None) -> dict:
+             temperature: float | None = None,
+             max_tokens: int | None = None,
+             workspace: str | None = None) -> dict:
     """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files`` 把 workspace 文件读写工具交给模型自主调用；
-    ``temperature`` 为 None 时沿用当前值（默认 0.3）。
+    ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
+    ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
     if temperature is not None:
         set_temperature(temperature)
+    if max_tokens is not None:
+        set_max_tokens(max_tokens)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(LOG_DIR, exist_ok=True)
     tools = get_tools(enable_files)
+
+    # workspace：每次运行都重置一次，避免上一轮的自定义目录残留
+    ws_path = None
+    if FILES_AVAILABLE:
+        try:
+            ws_path = use_workspace(workspace)
+        except Exception:                       # 非法目录静默回退，具体原因在 agent_brief 侧记录
+            ws_path = use_workspace(None)
 
     log_path = os.path.join(LOG_DIR, f"deepagents_{run_id}.log")
     captured: list[str] = []
@@ -366,9 +383,12 @@ def run_task(topic: str = "大模型上下文工程",
 
         emit([f"========== deepagents 原生 Skills 启动 RUN_ID={run_id} ==========",
               f"主题={topic} | 模型={os.environ.get('DEEPSEEK_MODEL')} | "
-              f"温度={current_temperature():.2f} | 技能源={SKILLS_SOURCE}",
+              f"温度={current_temperature():.2f} | "
+              f"输出上限={current_max_tokens() if current_max_tokens() else '不限'} | "
+              f"技能源={SKILLS_SOURCE}",
               f"工具集={[t.name for t in tools]} | workspace 文件读写="
-              f"{'启用' if enable_files else '关闭'}"])
+              f"{'启用' if enable_files else '关闭'} | "
+              f"workspace 目录={_rel(str(ws_path)) if ws_path else '默认'}"])
 
         # ---- 构建 ----
         t_build = time.time()
@@ -417,6 +437,8 @@ def run_task(topic: str = "大模型上下文工程",
             "topic": topic,
             "model": os.environ.get("DEEPSEEK_MODEL"),
             "temperature": current_temperature(),
+            "max_tokens": current_max_tokens(),
+            "workspace": _rel(str(ws_path)) if ws_path else "",
             "skills_source": SKILLS_SOURCE,
             "skills_disclosure": "3 级：metadata -> SKILL.md(read_file) -> resources",
             "messages": len(msgs),
@@ -447,16 +469,28 @@ def main() -> None:
     topic = args[0] if args else "大模型上下文工程"
     enable_files = any(a in ("--files", "--file-tools") for a in sys.argv[1:])
     temperature = None
+    max_tokens = None
+    workspace = None
     for a in sys.argv[1:]:
         if a.startswith("--temperature="):
             try:
                 temperature = float(a.split("=", 1)[1].strip())
             except ValueError:
                 raise SystemExit(f"--temperature 需要数字，收到 {a!r}")
-    summary = run_task(topic, enable_files=enable_files, temperature=temperature)
+        elif a.startswith("--max-tokens="):
+            try:
+                max_tokens = int(a.split("=", 1)[1].strip())
+            except ValueError:
+                raise SystemExit(f"--max-tokens 需要整数，收到 {a!r}")
+        elif a.startswith("--workspace="):
+            workspace = a.split("=", 1)[1].strip()
+    summary = run_task(topic, enable_files=enable_files, temperature=temperature,
+                       max_tokens=max_tokens, workspace=workspace)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
-    print(f"\n采样温度: {summary.get('temperature')}")
+    print(f"\n采样温度: {summary.get('temperature')} ｜ "
+          f"输出上限: {summary.get('max_tokens') if summary.get('max_tokens') else '不限'} ｜ "
+          f"workspace: {summary.get('workspace') or '（默认）'}")
 
 
 if __name__ == "__main__":
