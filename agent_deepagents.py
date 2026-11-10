@@ -54,6 +54,8 @@ from agent_brief import (
     get_tools,
     set_max_tokens,
     set_temperature,
+    setup_embedded_logging,
+    setup_run_logging,
     use_workspace,
 )
 
@@ -344,18 +346,27 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
 def build_agent(llm=None, workspace: str | None = None,
                 enable_files: bool = True,
                 temperature: float | None = None,
-                max_tokens: int | None = None):
+                max_tokens: int | None = None,
+                *, embedded: bool = True):
     """构造一个可直接 ``.stream()`` 的 deepagents 图（外部集成入口）。
 
     供通用 UI（如 agent-ui）按每轮请求现构造：模型实例由调用方传入，
     ``workspace`` 会作为文件工具的根目录。返回的是 LangGraph 编译后的图，
     调用方可用 ``agent.stream({"messages": [...]}, stream_mode=["messages","updates"])``
     同时拿到 token 流与节点更新。
+
+    ``embedded=True``（默认）：日志只写本项目文件，**不输出到宿主控制台**——
+                作为库被 UI 嵌入时不该污染别人的终端。每次调用开一个新的日志文件。
+    ``embedded=False``：保留控制台输出，供本项目自己的命令行入口使用。
     """
     if temperature is not None:
         set_temperature(temperature)
     if max_tokens is not None:
         set_max_tokens(max_tokens)
+    if embedded:
+        setup_run_logging(console=False)      # 外部 UI：只写文件
+    else:
+        setup_run_logging(console=True)       # 本项目入口：文件 + 控制台
     if FILES_AVAILABLE:
         try:
             use_workspace(workspace)
@@ -423,7 +434,8 @@ def run_task(topic: str = "大模型上下文工程",
 
         # ---- 构建 ----
         t_build = time.time()
-        agent = build_agent(llm=get_llm(), workspace=None, enable_files=enable_files)
+        agent = build_agent(llm=get_llm(), workspace=None, enable_files=enable_files,
+                            embedded=False)      # 本项目自己的入口：保留控制台输出
         build_s = round(time.time() - t_build, 2)
 
         # ---- 执行（回调采集）----

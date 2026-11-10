@@ -94,17 +94,23 @@ def _log_timing_table(total: float) -> None:
 LOG_FILE = os.path.join(LOG_DIR, f"run_{RUN_ID}.log")
 
 
-log = logging.getLogger("langgraph")
+#: 本项目的日志器。**不要用 "langgraph" 这个名字**——那是第三方库的命名空间，
+#: 把它的级别设成 DEBUG 会连带打开框架内部的调试日志，被嵌进别的 UI 时尤其明显。
+log = logging.getLogger("langgraph_brief")
 log.setLevel(logging.DEBUG)
+#: 不往宿主 root logger 冒泡：作为库被嵌入（如 agent-ui）时，日志只进本项目文件，
+#: 不污染宿主的控制台。
+log.propagate = False
 _handlers_ready = False
 
 
-def setup_logging(force: bool = False) -> logging.Logger:
+def setup_logging(force: bool = False, *, console: bool = True) -> logging.Logger:
     """挂载文件与控制台 handler。
 
     延迟到 main()/run_task() 中调用，避免"仅 import 模块"时产生 0 字节日志文件。
     ``force=True`` 会先摘掉旧 handler 再重挂——同一进程内多次运行时切到新日志文件
     （Streamlit UI 会在一次会话里连续跑多次）。
+    ``console=False`` 只写文件，供被外部 UI 嵌入的场景使用。
     """
     global _handlers_ready
     if _handlers_ready and not force:
@@ -119,11 +125,29 @@ def setup_logging(force: bool = False) -> logging.Logger:
     fh = logging.FileHandler(LOG_FILE, encoding="utf-8")     # 文件
     fh.setFormatter(fmt)
     log.addHandler(fh)
-    ch = logging.StreamHandler(sys.stdout)                   # 控制台
-    ch.setFormatter(fmt)
-    log.addHandler(ch)
+    if console:
+        ch = logging.StreamHandler(sys.stdout)               # 控制台（仅命令行/自带界面）
+        ch.setFormatter(fmt)
+        log.addHandler(ch)
     _handlers_ready = True
     return log
+
+
+def setup_run_logging(console: bool = True) -> logging.Logger:
+    """为一次新运行开一个日志文件。
+
+    ``console=True``（本项目命令行/自带界面）：文件 + 控制台双写。
+    ``console=False``（被外部 UI 嵌入）：只写文件，**不输出到宿主控制台**。
+    """
+    global RUN_ID, LOG_FILE
+    RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
+    LOG_FILE = os.path.join(LOG_DIR, f"run_{RUN_ID}.log")
+    return setup_logging(force=True, console=console)
+
+
+def setup_embedded_logging() -> logging.Logger:
+    """被外部 UI 嵌入时启用：新日志文件 + 不打扰宿主控制台。"""
+    return setup_run_logging(console=False)
 
 # ---------------------------------------------------------------------------
 # 全局统计（token 消耗、各节点耗时、故障）
