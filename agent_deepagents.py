@@ -60,6 +60,18 @@ from agent_brief import (
 )
 
 SKILLS_SOURCE = "/skills/"          # 相对 backend root，deepagents 要求正斜杠
+
+#: 默认系统提示。deepagents 会把它**追加在**自己的基础提示之前，
+#: 因此技能机制照常工作，这里只约束"怎么说话"：
+#: 模型默认爱先汇报"我将要做什么、我读了哪个技能"，那属于过程噪声，不是用户要的答案。
+DEFAULT_SYSTEM_PROMPT = """\
+你是技术调研助手。回答时务必遵守：
+
+- **直接给出最终答案**，不要叙述计划和过程（例如"我先读取技能说明""接下来我会检索"），
+  也不要汇报你读了哪些技能、调用了哪些工具；
+- 不要整段复述工具返回的原文，只提炼与问题相关的结论；
+- 需要检索就直接调用工具，拿到结果后径直作答，不要边做边解说。
+"""
 SKILLS_DIR = os.path.join(BASE_DIR, "skills")
 
 # 从工具入参里解析技能路径：skills/<name>/SKILL.md（兼容正反斜杠）
@@ -347,6 +359,7 @@ def build_agent(llm=None, workspace: str | None = None,
                 enable_files: bool = True,
                 temperature: float | None = None,
                 max_tokens: int | None = None,
+                system_prompt: str | None = None,
                 *, embedded: bool = True):
     """构造一个可直接 ``.stream()`` 的 deepagents 图（外部集成入口）。
 
@@ -358,6 +371,7 @@ def build_agent(llm=None, workspace: str | None = None,
     ``embedded=True``（默认）：日志只写本项目文件，**不输出到宿主控制台**——
                 作为库被 UI 嵌入时不该污染别人的终端。每次调用开一个新的日志文件。
     ``embedded=False``：保留控制台输出，供本项目自己的命令行入口使用。
+    ``system_prompt=None`` 时用 :data:`DEFAULT_SYSTEM_PROMPT`；传空串表示不加自定义提示。
     """
     if temperature is not None:
         set_temperature(temperature)
@@ -380,6 +394,11 @@ def build_agent(llm=None, workspace: str | None = None,
         tools=tools,
         backend=backend,
         skills=[SKILLS_SOURCE],
+        # deepagents 会把这段**追加在**它自己的基础提示之前，所以技能机制不受影响，
+        # 只是把"汇报过程"这类噪声压下去（模型默认爱说"我先读一下技能…"）
+        system_prompt=(
+            DEFAULT_SYSTEM_PROMPT if system_prompt is None else system_prompt
+        ) or None,
     )
 
 

@@ -266,13 +266,27 @@ def _qwen_fetch(url: str) -> str:
     return data.get("content", "")
 
 
+#: XML 声明：lxml 不接受"str 输入 + 声明里带 encoding"，必须先剥掉
+_XML_DECL = re.compile(r"^\s*<\?xml[^>]*\?>\s*", re.I)
+
+
+def _parse_html(text: str):
+    """把已解码的 HTML 字符串交给 lxml。
+
+    lxml 对 ``str`` 输入有个硬限制：若文档开头带 ``<?xml ... encoding=...?>``，
+    会直接抛 ``ValueError: Unicode strings with encoding declaration are not supported``。
+    这类页面（XHTML、部分站点的模板）并不少见，所以统一先剥掉声明再解析。
+    """
+    return html.fromstring(_XML_DECL.sub("", text, count=1))
+
+
 def _bing_search(query: str) -> str:
     """降级后端：Bing HTML 抓取。"""
     r = requests.get("https://cn.bing.com/search",
                      params={"q": query, "count": 10},
                      headers={"User-Agent": UA}, timeout=15)
     r.raise_for_status()
-    tree = html.fromstring(r.text)
+    tree = _parse_html(r.text)
     results = []
     for li in tree.xpath('//li[contains(@class, "b_algo")]'):
         a = li.xpath('.//h2/a')
@@ -325,7 +339,15 @@ def web_search(query: str) -> str:
     msg = f"千问 EnhancedSearch 失败({_root_cause(last)})，已降级 Bing"
     log.warning(msg)
     STATS["errors"].append(msg)
-    return _bing_search(query)
+    # 工具**绝不抛异常**：模型直接调用的场景（如 deepagents）里，一次 ETL/网络失败
+    # 会直接把整轮打断；返回错误文本让模型自行换策略才是正确姿势。
+    try:
+        return _bing_search(query)
+    except Exception as e:                          # noqa: BLE001
+        reason = _root_cause(e)
+        STATS["errors"].append(f"Bing 降级也失败: {reason}")
+        log.warning("Bing 降级也失败: %s", reason)
+        return f"[检索失败: {reason}]"
 
 
 def _http_fetch(url: str) -> str:
@@ -336,7 +358,7 @@ def _http_fetch(url: str) -> str:
     # 处理常见编码
     if r.encoding and r.encoding.lower() in ("iso-8859-1", "ascii"):
         r.encoding = r.apparent_encoding
-    tree = html.fromstring(r.text)
+    tree = _parse_html(r.text)
     for bad in tree.xpath('//script | //style | //nav | //footer | //header | //aside'):
         bad.drop_tree()
     text = " ".join(p.text_content().strip() for p in tree.xpath('//p'))
@@ -362,7 +384,14 @@ def web_fetch(url: str) -> str:
     msg = f"千问 web_fetch 失败({_root_cause(last)})，已降级本地抓取: {url}"
     log.warning(msg)
     STATS["errors"].append(msg)
-    return _http_fetch(url)
+    # 同上：本地抓取失败（404/429/超时/解析失败）也不能抛出去
+    try:
+        return _http_fetch(url)
+    except Exception as e:                          # noqa: BLE001
+        reason = _root_cause(e)
+        STATS["errors"].append(f"本地抓取也失败({url}): {reason}")
+        log.warning("本地抓取也失败 %s: %s", url, reason)
+        return f"[读取失败: {reason}]"
 
 
 @tool
