@@ -186,8 +186,8 @@ def fresh_stats() -> dict:
         "llm_calls": 0,
         "node_timings": {},
         "tool_calls": {},
-        "search_backend": {"qwen_mcp": 0, "bing_fallback": 0},
-        "fetch_backend": {"qwen_mcp": 0, "local_fallback": 0},
+        "search_backend": {"qwen_mcp": 0, "bing_fallback": 0, "cache_hit": 0},
+        "fetch_backend": {"qwen_mcp": 0, "local_fallback": 0, "cache_hit": 0},
         "errors": [],
         "skills": {},
     }
@@ -215,6 +215,15 @@ QWEN_MCP_BASE = "https://maas.qianwenaiapi.com/api/v1/mcps"
 _qwen_tools: dict = {}
 _qwen_lock = threading.Lock()
 
+#: 单次 MCP 调用的硬性上限（秒）。千问 WebFetch 遇到慢站会一直挂在 SSE 上，
+#: 实测出现过单次 75 秒——界面因此长时间空白。超过这个时间就抛超时，走本地降级。
+MCP_CALL_TIMEOUT = float(os.environ.get("LANGGRAPH_BRIEF_MCP_TIMEOUT", "10"))
+
+
+async def _ainvoke_with_deadline(tool_obj, args: dict, timeout: float):
+    """带截止时间的 MCP 工具调用。"""
+    return await asyncio.wait_for(tool_obj.ainvoke(args), timeout=timeout)
+
 
 async def _load_qwen_tools() -> dict:
     """经 langchain-mcp-adapters 接入千问 MCP 服务（Streamable HTTP）。"""
@@ -224,13 +233,18 @@ async def _load_qwen_tools() -> dict:
     if not key:
         raise RuntimeError("未配置 DASHSCOPE_API_KEY")
     auth = {"Authorization": f"Bearer {key}"}
+    # timeout / sse_read_timeout 都显式给死：默认值偏长，慢站会把整轮拖住
     client = MultiServerMCPClient({
         "qwen-search": {"transport": "streamable_http",
                         "url": f"{QWEN_MCP_BASE}/EnhancedSearch/mcp",
-                        "headers": auth},
+                        "headers": auth,
+                        "timeout": MCP_CALL_TIMEOUT,
+                        "sse_read_timeout": MCP_CALL_TIMEOUT},
         "qwen-fetch": {"transport": "streamable_http",
                        "url": f"{QWEN_MCP_BASE}/WebFetch/mcp",
-                       "headers": auth},
+                       "headers": auth,
+                       "timeout": MCP_CALL_TIMEOUT,
+                       "sse_read_timeout": MCP_CALL_TIMEOUT},
     })
     return {t.name: t for t in await client.get_tools()}
 
@@ -262,7 +276,9 @@ def _qwen_search(query: str) -> str:
     tool_obj = tools.get("search_pro")
     if tool_obj is None:
         raise RuntimeError(f"千问 MCP 未提供 search_pro（现有: {list(tools)}）")
-    text = _blocks_to_text(asyncio.run(tool_obj.ainvoke({"query": query})))
+    text = _blocks_to_text(
+        asyncio.run(_ainvoke_with_deadline(tool_obj, {"query": query}, MCP_CALL_TIMEOUT))
+    )
     pages = json.loads(text).get("pages", [])
     results = [{"title": p.get("title", ""), "url": p.get("url", ""),
                 "snippet": p.get("snippet", "")} for p in pages]
@@ -275,7 +291,9 @@ def _qwen_fetch(url: str) -> str:
     tool_obj = tools.get("web_fetch")
     if tool_obj is None:
         raise RuntimeError(f"千问 MCP 未提供 web_fetch（现有: {list(tools)}）")
-    data = json.loads(_blocks_to_text(asyncio.run(tool_obj.ainvoke({"url": url}))))
+    data = json.loads(_blocks_to_text(
+        asyncio.run(_ainvoke_with_deadline(tool_obj, {"url": url}, MCP_CALL_TIMEOUT))
+    ))
     return data.get("content", "")
 
 
@@ -333,15 +351,41 @@ def _root_cause(exc: BaseException) -> str:
     return f"{uniq[0]}（另有 {len(uniq) - 1} 项同类失败）"
 
 
+#: 进程内结果缓存：(kind, key) -> (写入时间, 值)。
+#: 目的是**同主题重跑**时不必再等一遍检索与抓取——演示时反复跑同一个题很常见。
+CACHE_TTL = float(os.environ.get("LANGGRAPH_BRIEF_CACHE_TTL", "300"))
+_cache: dict[tuple[str, str], tuple[float, str]] = {}
+
+
+def _cache_get(kind: str, key: str) -> str | None:
+    if CACHE_TTL <= 0:
+        return None
+    hit = _cache.get((kind, key))
+    if hit and time.time() - hit[0] < CACHE_TTL:
+        return hit[1]
+    return None
+
+
+def _cache_put(kind: str, key: str, value: str) -> None:
+    """只缓存成功结果：错误文本（``[...]``）不缓存，否则一次网络抖动会污染后续运行。"""
+    if CACHE_TTL > 0 and value and not value.lstrip().startswith("["):
+        _cache[(kind, key)] = (time.time(), value)
+
+
 @tool
 def web_search(query: str) -> str:
     """联网搜索指定关键词，返回多条结果的标题、链接与摘要（JSON 数组）。
     主后端：千问 EnhancedSearch MCP（联网搜索增强版）；失败重试 1 次后降级 Bing。"""
+    cached = _cache_get("search", query)
+    if cached is not None:
+        STATS["search_backend"]["cache_hit"] = STATS["search_backend"].get("cache_hit", 0) + 1
+        return cached
     last = None
     for attempt in (1, 2):
         try:
             out = _qwen_search(query)
             STATS["search_backend"]["qwen_mcp"] += 1
+            _cache_put("search", query, out)
             return out
         except Exception as e:
             last = e
@@ -381,25 +425,35 @@ def _http_fetch(url: str) -> str:
 @tool
 def web_fetch(url: str) -> str:
     """读取指定网页正文（截取前 3000 字符）。
-    主后端：千问 MCP web_fetch（标准化 Markdown）；失败重试 1 次后降级本地抓取。"""
+    主后端：千问 MCP web_fetch（标准化 Markdown）；失败重试 1 次后降级本地抓取。
+
+    每次 MCP 调用有硬性上限（``MCP_CALL_TIMEOUT``，默认 10 秒），超时即降级本地抓取，
+    避免慢站把整轮拖到一分钟以上。"""
+    cached = _cache_get("fetch", url)
+    if cached is not None:
+        STATS["fetch_backend"]["cache_hit"] = STATS["fetch_backend"].get("cache_hit", 0) + 1
+        return cached
     last = None
     for attempt in (1, 2):
         try:
-            out = _qwen_fetch(url)
+            out = _qwen_fetch(url)[:3000]
             STATS["fetch_backend"]["qwen_mcp"] += 1
-            return out[:3000]
+            _cache_put("fetch", url, out)
+            return out
         except Exception as e:
             last = e
             if attempt == 1:
                 log.warning("千问 web_fetch 第 1 次失败(%s)，重试…", _root_cause(e))
-                time.sleep(1.0)
+                time.sleep(0.5)                     # 原来 1s，缩短一半
     STATS["fetch_backend"]["local_fallback"] += 1
     msg = f"千问 web_fetch 失败({_root_cause(last)})，已降级本地抓取: {url}"
     log.warning(msg)
     STATS["errors"].append(msg)
     # 同上：本地抓取失败（404/429/超时/解析失败）也不能抛出去
     try:
-        return _http_fetch(url)
+        out = _http_fetch(url)
+        _cache_put("fetch", url, out)
+        return out
     except Exception as e:                          # noqa: BLE001
         reason = _root_cause(e)
         STATS["errors"].append(f"本地抓取也失败({url}): {reason}")
