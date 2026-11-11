@@ -1,0 +1,30 @@
+13:15:06 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 57.00ms
+13:15:06 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+13:15:06 | INFO    | 主题=RAG 与长上下文的关系 | 模型=deepseek-flash | 温度=0.30 | 输出上限=不限 | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261111_131506
+13:15:06 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator'] | workspace 文件读写=关闭 | workspace 目录=workspace | shell 命令=关闭
+13:15:06 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+13:15:07 | INFO    | plan 完成 | 生成查询 ['RAG 长上下文 关系', '检索增强生成 长上下文 对比', 'RAG long context relationship'] | 耗时 0.85s
+13:15:07 | INFO    | 技能路由原始输出: search-strategy | source-triage | brief-writing
+13:15:07 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'search-strategy', 'source-triage'] | 注入正文 2072 字符（mode=lazy） | 耗时 0.47s
+13:15:08 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.13s)
+13:15:09 | WARNING | 千问 EnhancedSearch 第 1 次失败(BrokenResourceError: )，重试…
+13:15:11 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 3.52s
+13:15:13 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 2.06s
+13:15:16 | INFO    | verify 完成 | 知识点 732 字符 | 耗时 3.52s
+13:15:19 | INFO    | 简报定稿：正文 431 字（≤500），来源 313 字不计入，压缩 0 次
+13:15:19 | INFO    | brief 完成 | 全文 822 字符 | 正文 431 字 | 来源 313 字 | 耗时 2.36s
+13:15:19 | INFO    | 总耗时 12.78s | LLM调用 4 次 | token(in=5556, out=826, 总=6382)
+13:15:19 | INFO    | ---------- 各步骤耗时 ----------
+13:15:19 | INFO    |   search            3.52s   27.5%  █████████
+13:15:19 | INFO    |   verify            3.52s   27.5%  █████████
+13:15:19 | INFO    |   brief             2.36s   18.5%  ██████
+13:15:19 | INFO    |   fetch             2.06s   16.1%  █████
+13:15:19 | INFO    |   plan              0.85s    6.7%  ██
+13:15:19 | INFO    |   skill_select      0.47s    3.7%  █
+13:15:19 | INFO    |   节点合计         12.78s  100.0%
+13:15:19 | INFO    |   图外开销          0.00s    0.0%
+13:15:19 | INFO    |   总耗时           12.78s
+13:15:19 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 1877 token | 目录 327 token
+13:15:19 | INFO    | 简报已保存: output\brief_20261111_131506.md
+13:15:19 | INFO    | 统计已保存: output\stats_20261111_131506.json
+13:15:19 | INFO    | ========== 实测结束 ==========

@@ -1,0 +1,95 @@
+{
+  "run_id": "20261111_130643",
+  "impl": "skill_loader",
+  "topic": "RAG 与长上下文的关系",
+  "total_elapsed_s": 85.98,
+  "node_timings": {
+    "plan": 1.52,
+    "skill_select": 20.01,
+    "search": 2.76,
+    "fetch": 2.0,
+    "verify": 20.59,
+    "brief": 39.1
+  },
+  "tool_calls": {
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0,
+    "cache_hit": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0,
+    "cache_hit": 0
+  },
+  "skills": {
+    "mode": "lazy",
+    "skill_count": 5,
+    "skill_names": [
+      "brief-writing",
+      "citation-format",
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "catalog_chars": 456,
+    "catalog_tokens": 327,
+    "loaded": [
+      "brief-writing",
+      "fact-cross-verify",
+      "search-strategy"
+    ],
+    "loaded_count": 3,
+    "loaded_body_chars": 2142,
+    "loaded_body_tokens": 2043,
+    "all_body_chars": 3000,
+    "all_body_tokens": 2805,
+    "scan_ms": 5.8,
+    "preload_ms": 0.0,
+    "loaded_detail": {
+      "brief-writing": {
+        "chars": 1041,
+        "tokens": 999,
+        "load_ms": 0.33
+      },
+      "fact-cross-verify": {
+        "chars": 693,
+        "tokens": 668,
+        "load_ms": 0.27
+      },
+      "search-strategy": {
+        "chars": 408,
+        "tokens": 376,
+        "load_ms": 0.17
+      }
+    },
+    "token_estimator": "tiktoken/cl100k_base",
+    "estimator_init_ms": 135.4
+  },
+  "skills_used": [
+    "brief-writing",
+    "fact-cross-verify",
+    "search-strategy"
+  ],
+  "llm_calls": 4,
+  "token_input": 6219,
+  "token_output": 15495,
+  "token_total": 21714,
+  "file_tools": {
+    "enabled": false,
+    "sources": [],
+    "written": [],
+    "workspace": "workspace"
+  },
+  "shell_tools": {
+    "enabled": false,
+    "whitelist": "",
+    "demo": {}
+  },
+  "temperature": 0.3,
+  "max_tokens": null,
+  "errors": []
+}
