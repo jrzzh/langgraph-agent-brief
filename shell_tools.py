@@ -166,16 +166,72 @@ def _decode(raw: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 审批分级
+# ---------------------------------------------------------------------------
+#: 完全不需要打扰用户的命令：纯查询、无副作用、不泄露环境
+SAFE_COMMANDS = frozenset({"where", "which"})
+#: 子命令级的"安全"：版本查询对任何白名单命令都无副作用
+SAFE_SUBCOMMANDS = frozenset({"--version", "-v"})
+
+
+def needs_approval(command: str) -> bool:
+    """这条命令是否需要用户确认。
+
+    分级原则：**只读且无信息价值**的直接放行，其余一律问一次。
+
+    - 放行：``where`` / ``which`` / 任何 ``--version`` 查询——纯粹查位置和版本；
+    - 询问：``git status/branch/diff``、``pip list/show/freeze``——会暴露仓库结构、
+      已装包清单等，对用户来说有信息价值，值得确认一下。
+
+    白名单外的命令**不走审批**，因为 :func:`_check_allowed` 会先直接拒绝——
+    给模型"申请执行任意命令"的口子，等于把白名单变成可谈判的。
+    """
+    try:
+        argv = _split(command)
+    except ShellToolError:
+        return True                     # 拆不出来就按"需要确认"处理
+    if not argv:
+        return True
+    cmd = argv[0].lower()
+    if cmd in SAFE_COMMANDS:
+        return False
+    sub = argv[1].lower() if len(argv) > 1 else ""
+    return sub not in {s.lower() for s in SAFE_SUBCOMMANDS}
+
+
+# ---------------------------------------------------------------------------
 # 实现层
 # ---------------------------------------------------------------------------
-def shell_impl(command: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
-    """在 workspace 内执行一条白名单内的只读命令。"""
+def shell_impl(command: str, timeout: int = DEFAULT_TIMEOUT,
+               policy: "Callable[[str], bool] | None" = None) -> dict:
+    """在 workspace 内执行一条白名单内的只读命令。
+
+    ``policy`` 是外部 UI 提供的审批回调（``agent-ui`` 的 ``make_policy(ask_user)``）：
+    非空时，"需要确认"的命令会先问一句，用户拒绝则返回 ``APPROVAL_DENIED``。
+    ``None`` 表示没有审批通道（本项目命令行）——此时白名单就是唯一防线。
+    """
     if type(timeout) is not int or not 1 <= timeout <= MAX_TIMEOUT:
         raise ShellToolError("INVALID_ARGUMENT", f"timeout 必须为 1~{MAX_TIMEOUT} 的整数")
 
     argv = _split(command)
     _check_allowed(argv)
     _check_args(argv)
+
+    # 审批放在全部静态校验之后：非法命令直接拒，不该拿它去打扰用户
+    if policy is not None and needs_approval(command):
+        if not policy(f"是否允许执行以下只读命令？\n\n{command}"):
+            return {
+                "ok": False,
+                "code": "APPROVAL_DENIED",
+                "argv": argv,
+                "cwd": WORKSPACE_ROOT.name,
+                "returncode": None,
+                "stdout": "",
+                "stderr": "",
+                "truncated": False,
+                "duration_s": 0.0,
+                "message": "用户未允许执行该命令；如需继续请换一种只读查询方式",
+            }
 
     WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
     cwd = WORKSPACE_ROOT
@@ -240,18 +296,37 @@ def _to_json(fn, *args, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 # 工具定义
 # ---------------------------------------------------------------------------
-@tool
-def shell(command: str, timeout: int = DEFAULT_TIMEOUT) -> str:
-    """在 workspace 内执行一条**只读**命令，返回退出码、stdout 与 stderr（JSON）。
+SHELL_DESCRIPTION = """在 workspace 内执行一条**只读**命令，返回退出码、stdout 与 stderr（JSON）。
 
-    白名单只放真实可执行文件（cmd 内建命令如 ``dir`` / ``echo`` 不在其中）：
-    ``where`` / ``which`` / ``python --version|-V`` / ``pip list|show|freeze|--version`` /
-    ``git status|branch|diff|--version``。完整清单见模块常量 ``ALLOWED_COMMANDS``。
+白名单只放真实可执行文件（cmd 内建命令如 ``dir`` / ``echo`` 不在其中）：
+``where`` / ``which`` / ``python --version|-V`` / ``pip list|show|freeze|--version`` /
+``git status|branch|diff|--version``。完整清单见模块常量 ``ALLOWED_COMMANDS``。
 
-    不允许管道与重定向、绝对路径、``..``；子进程不继承任何密钥；默认 20 秒超时。
-    参数名固定为 ``command``，以便外部前端的安全策略能够识别并触发审批。"""
-    return _to_json(shell_impl, command, timeout)
+不允许管道与重定向、绝对路径、``..``；子进程不继承任何密钥；默认 20 秒超时。
+参数名固定为 ``command``，以便外部前端的安全策略能够识别并触发审批。
+非版本查询类的命令在执行前会请求用户确认，被拒绝时返回 ``APPROVAL_DENIED``。"""
 
+
+def make_shell_tool(policy=None):
+    """构造一个 ``shell`` 工具，可绑定审批回调。
+
+    ``policy`` 签名 ``(question: str) -> bool``，通常传
+    ``agent_ui.core.ask.make_policy(ask_user)``：用户拒绝或超时都返回 ``False``
+    （fail-closed），工具会返回 ``APPROVAL_DENIED`` 而不是执行命令。
+    ``policy=None`` 表示没有审批通道（本项目命令行），此时白名单是唯一防线。
+
+    工具名固定 ``shell``、参数名固定 ``command``——外部 UI 的
+    ``approval_policy.assess()`` 靠这两样识别 shell 类调用，改名会让审批静默失效。
+    """
+
+    def _run(command: str, timeout: int = DEFAULT_TIMEOUT) -> str:
+        return _to_json(shell_impl, command, timeout, policy)
+
+    return tool("shell", description=SHELL_DESCRIPTION)(_run)
+
+
+#: 无审批通道的版本（本项目命令行 / Streamlit 用）
+shell = make_shell_tool(None)
 
 SHELL_TOOLS = [shell]
 

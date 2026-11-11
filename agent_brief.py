@@ -450,6 +450,7 @@ try:
     from shell_tools import (
         SHELL_TOOLS,
         allowed_commands_text,
+        make_shell_tool,
         shell_impl,
     )
 
@@ -462,17 +463,23 @@ except Exception:                       # shell 工具缺失时不影响主流�
 TOOLS = list(BASE_TOOLS)
 
 
-def get_tools(enable_files: bool = False, enable_shell: bool = False) -> list:
+def get_tools(enable_files: bool = False, enable_shell: bool = False,
+              shell_policy=None) -> list:
     """返回本次运行可用的工具集。
 
     基础三件套始终可用；``enable_files`` 追加 read_file / write_file；
     ``enable_shell`` 追加只读 shell 命令工具。
+
+    ``shell_policy`` 给 shell 工具绑定审批回调（``(question) -> bool``）。
+    传 None 表示没有审批通道（本项目命令行），白名单即唯一防线；被外部 UI 嵌入时
+    应当传入 ``make_policy(ask_user)``，非版本查询类命令会先问用户。
     """
     tools = list(BASE_TOOLS)
     if enable_files and FILES_AVAILABLE:
         tools.extend(FILE_TOOLS)
     if enable_shell and SHELL_AVAILABLE:
-        tools.extend(SHELL_TOOLS)
+        tools.append(make_shell_tool(shell_policy) if shell_policy is not None
+                     else SHELL_TOOLS[0])
     return tools
 
 

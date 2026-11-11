@@ -362,6 +362,7 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
 def build_agent(llm=None, workspace: str | None = None,
                 enable_files: bool = True,
                 enable_shell: bool = False,
+                shell_policy=None,
                 temperature: float | None = None,
                 max_tokens: int | None = None,
                 system_prompt: str | None = None,
@@ -377,6 +378,8 @@ def build_agent(llm=None, workspace: str | None = None,
                 作为库被 UI 嵌入时不该污染别人的终端。同时 workspace 走**宽松**校验：
                 目录作用域由宿主决定（用户在界面上选了哪个就是哪个），不再二次判定。
     ``embedded=False``：保留控制台输出，workspace 走**严格**校验，供本项目自己的入口使用。
+    ``enable_shell=True`` 时把只读 shell 工具交给模型；``shell_policy`` 是审批回调
+    （``(question) -> bool``），被外部 UI 嵌入时应当传入，否则白名单就是唯一防线。
     ``system_prompt=None`` 时用 :data:`DEFAULT_SYSTEM_PROMPT`；传空串表示不加自定义提示。
     """
     if temperature is not None:
@@ -397,7 +400,7 @@ def build_agent(llm=None, workspace: str | None = None,
     else:
         ws_root = None
 
-    tools = get_tools(enable_files, enable_shell)
+    tools = get_tools(enable_files, enable_shell, shell_policy)
     project_backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
     # 技能文件在本项目里，而"工作目录"是调用方给的。两个根不能简单取其一：
     # - 根设成项目 → 模型的 ls/glob 会看到本项目（甚至把交付物当成"用户文件"）；
