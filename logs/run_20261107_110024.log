@@ -1,0 +1,30 @@
+11:00:24 | INFO    | 技能层 mode=lazy | 技能 5 个 | 目录 327 token | 扫描 51.44ms
+11:00:24 | INFO    | ========== LangGraph 统一任务实测开始 ==========
+11:00:24 | INFO    | 主题=MCP 的基本架构与适用场景 | 模型=deepseek-flash | 技能模式=lazy | 实现=skill_loader | RUN_ID=20261107_110024
+11:00:24 | INFO    | 工具集=['web_search', 'web_fetch', 'calculator', 'shell'] | workspace 文件读写=关闭 | shell 命令=启用
+11:00:24 | INFO    | 演示 calculator: 2**10 + 3*7 = 1045
+11:00:24 | INFO    | 演示 shell: git --version → rc=0, git version 2.54.0.windows.1 | 白名单: git status/branch/diff/--version；pip list/--version/show/freeze；python --version/-V；where；which
+11:00:26 | INFO    | plan 完成 | 生成查询 ['MCP 基本架构', 'MCP 适用场景', 'Model Context Protocol 架构 场景'] | 耗时 2.15s
+11:01:02 | INFO    | 技能路由原始输出: brief-writing | fact-cross-verify | search-strategy
+11:01:02 | INFO    | skill_select 完成 | 选中 ['brief-writing', 'fact-cross-verify', 'search-strategy'] | 注入正文 2215 字符（mode=lazy） | 耗时 35.77s
+11:01:03 | INFO    | 千问 MCP 工具加载完成: ['search_pro', 'web_fetch'] (1.28s)
+11:01:05 | INFO    | search 完成 | 3 个查询 → 15 条结果 | 耗时 2.81s
+11:01:06 | INFO    | fetch 完成 | 读取 3 个网页 | 耗时 1.40s
+11:01:23 | INFO    | verify 完成 | 知识点 406 字符 | 耗时 16.82s
+11:01:38 | INFO    | 简报定稿：正文 463 字（≤500），来源 430 字不计入，压缩 0 次
+11:01:38 | INFO    | brief 完成 | 全文 984 字符 | 正文 463 字 | 来源 430 字 | 耗时 15.30s
+11:01:38 | INFO    | 总耗时 74.25s | LLM调用 4 次 | token(in=5715, out=9648, 总=15363)
+11:01:38 | INFO    | ---------- 各步骤耗时 ----------
+11:01:38 | INFO    |   skill_select     35.77s   48.2%  ████████████████
+11:01:38 | INFO    |   verify           16.82s   22.7%  ███████
+11:01:38 | INFO    |   brief            15.30s   20.6%  ██████
+11:01:38 | INFO    |   search            2.81s    3.8%  █
+11:01:38 | INFO    |   plan              2.15s    2.9%  █
+11:01:38 | INFO    |   fetch             1.40s    1.9%  █
+11:01:38 | INFO    |   节点合计         74.25s  100.0%
+11:01:38 | INFO    |   图外开销          0.00s    0.0%
+11:01:38 | INFO    |   总耗时           74.25s
+11:01:38 | INFO    | 技能层汇总: mode=lazy | 加载 3/5 个技能 | 注入正文 2043 token | 目录 327 token
+11:01:38 | INFO    | 简报已保存: output\brief_20261107_110024.md
+11:01:38 | INFO    | 统计已保存: output\stats_20261107_110024.json
+11:01:38 | INFO    | ========== 实测结束 ==========

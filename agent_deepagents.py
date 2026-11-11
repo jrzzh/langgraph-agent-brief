@@ -434,11 +434,13 @@ def run_task(topic: str = "大模型上下文工程",
              enable_files: bool = False,
              temperature: float | None = None,
              max_tokens: int | None = None,
-             workspace: str | None = None) -> dict:
+             workspace: str | None = None,
+             enable_shell: bool = False) -> dict:
     """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
-    ``enable_files`` 把 workspace 文件读写工具交给模型自主调用；
+    ``enable_files`` / ``enable_shell`` 分别把 workspace 文件读写、只读 shell
+    命令工具交给模型自主调用。
     ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
     ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
@@ -448,7 +450,7 @@ def run_task(topic: str = "大模型上下文工程",
         set_max_tokens(max_tokens)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(LOG_DIR, exist_ok=True)
-    tools = get_tools(enable_files)
+    tools = get_tools(enable_files, enable_shell)
 
     # workspace：每次运行都重置一次，避免上一轮的自定义目录残留
     ws_path = None
@@ -476,7 +478,8 @@ def run_task(topic: str = "大模型上下文工程",
               f"输出上限={current_max_tokens() if current_max_tokens() else '不限'} | "
               f"技能源={SKILLS_SOURCE}",
               f"工具集={[t.name for t in tools]} | workspace 文件读写="
-              f"{'启用' if enable_files else '关闭'} | "
+              f"{'启用' if enable_files else '关闭'} | shell 命令="
+              f"{'启用（只读白名单）' if enable_shell else '关闭'} | "
               f"workspace 目录={_rel(str(ws_path)) if ws_path else '默认'}"])
 
         # ---- 构建 ----
@@ -556,6 +559,7 @@ def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     topic = args[0] if args else "大模型上下文工程"
     enable_files = any(a in ("--files", "--file-tools") for a in sys.argv[1:])
+    enable_shell = any(a in ("--shell", "--shell-tools") for a in sys.argv[1:])
     temperature = None
     max_tokens = None
     workspace = None
@@ -573,7 +577,8 @@ def main() -> None:
         elif a.startswith("--workspace="):
             workspace = a.split("=", 1)[1].strip()
     summary = run_task(topic, enable_files=enable_files, temperature=temperature,
-                       max_tokens=max_tokens, workspace=workspace)
+                       max_tokens=max_tokens, workspace=workspace,
+                       enable_shell=enable_shell)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
     print(f"\n采样温度: {summary.get('temperature')} ｜ "

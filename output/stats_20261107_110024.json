@@ -1,0 +1,96 @@
+{
+  "run_id": "20261107_110024",
+  "impl": "skill_loader",
+  "topic": "MCP 的基本架构与适用场景",
+  "total_elapsed_s": 74.25,
+  "node_timings": {
+    "plan": 2.15,
+    "skill_select": 35.77,
+    "search": 2.81,
+    "fetch": 1.4,
+    "verify": 16.82,
+    "brief": 15.3
+  },
+  "tool_calls": {
+    "shell": 1,
+    "web_search": 3,
+    "web_fetch": 3
+  },
+  "search_backend": {
+    "qwen_mcp": 3,
+    "bing_fallback": 0
+  },
+  "fetch_backend": {
+    "qwen_mcp": 3,
+    "local_fallback": 0
+  },
+  "skills": {
+    "mode": "lazy",
+    "skill_count": 5,
+    "skill_names": [
+      "brief-writing",
+      "citation-format",
+      "fact-cross-verify",
+      "search-strategy",
+      "source-triage"
+    ],
+    "catalog_chars": 456,
+    "catalog_tokens": 327,
+    "loaded": [
+      "brief-writing",
+      "fact-cross-verify",
+      "search-strategy"
+    ],
+    "loaded_count": 3,
+    "loaded_body_chars": 2142,
+    "loaded_body_tokens": 2043,
+    "all_body_chars": 3000,
+    "all_body_tokens": 2805,
+    "scan_ms": 51.44,
+    "preload_ms": 0.0,
+    "loaded_detail": {
+      "brief-writing": {
+        "chars": 1041,
+        "tokens": 999,
+        "load_ms": 0.43
+      },
+      "fact-cross-verify": {
+        "chars": 693,
+        "tokens": 668,
+        "load_ms": 0.16
+      },
+      "search-strategy": {
+        "chars": 408,
+        "tokens": 376,
+        "load_ms": 0.15
+      }
+    },
+    "token_estimator": "tiktoken/cl100k_base",
+    "estimator_init_ms": 82.19
+  },
+  "skills_used": [
+    "brief-writing",
+    "fact-cross-verify",
+    "search-strategy"
+  ],
+  "llm_calls": 4,
+  "token_input": 5715,
+  "token_output": 9648,
+  "token_total": 15363,
+  "file_tools": {
+    "enabled": false,
+    "sources": [],
+    "written": []
+  },
+  "shell_tools": {
+    "enabled": true,
+    "whitelist": "git status/branch/diff/--version；pip list/--version/show/freeze；python --version/-V；where；which",
+    "demo": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "git version 2.54.0.windows.1\n",
+      "duration_s": 0.03
+    }
+  },
+  "errors": []
+}

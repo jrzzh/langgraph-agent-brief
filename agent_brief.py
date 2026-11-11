@@ -445,13 +445,35 @@ except Exception:                       # 文件工具缺失时不影响主流�
     FILE_TOOLS = []                     # type: ignore
     FILES_AVAILABLE = False
 
+#: 可选的只读 shell 命令工具（默认不启用，白名单极窄）
+try:
+    from shell_tools import (
+        SHELL_TOOLS,
+        allowed_commands_text,
+        shell_impl,
+    )
+
+    SHELL_AVAILABLE = True
+except Exception:                       # shell 工具缺失时不影响主流程
+    SHELL_TOOLS = []                    # type: ignore
+    SHELL_AVAILABLE = False
+
 #: 兼容既有引用（deepagents 等模块 import 的是这个名字）
 TOOLS = list(BASE_TOOLS)
 
 
-def get_tools(enable_files: bool = False) -> list:
-    """返回本次运行可用的工具集；开启文件读写时追加 read_file / write_file。"""
-    return [*BASE_TOOLS, *(FILE_TOOLS if (enable_files and FILES_AVAILABLE) else [])]
+def get_tools(enable_files: bool = False, enable_shell: bool = False) -> list:
+    """返回本次运行可用的工具集。
+
+    基础三件套始终可用；``enable_files`` 追加 read_file / write_file；
+    ``enable_shell`` 追加只读 shell 命令工具。
+    """
+    tools = list(BASE_TOOLS)
+    if enable_files and FILES_AVAILABLE:
+        tools.extend(FILE_TOOLS)
+    if enable_shell and SHELL_AVAILABLE:
+        tools.extend(SHELL_TOOLS)
+    return tools
 
 
 # ---------------------------------------------------------------------------
@@ -902,14 +924,16 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None]:
+def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None, bool]:
     """解析命令行。
 
     位置参数为主题；``--skills=lazy|eager|off`` 选择技能加载模式；
     ``--files`` 开启 workspace 文件读写；``--temperature=0.3`` 调整采样温度；
-    ``--max-tokens=4096`` 限制单次输出（默认不限）；``--workspace=路径`` 指定文件根目录。
+    ``--max-tokens=4096`` 限制单次输出（默认不限）；``--workspace=路径`` 指定文件根目录；
+    ``--shell`` 开启只读 shell 命令工具。
     """
     topic, mode, files = "大模型上下文工程", "lazy", False
+    shell = False
     temperature: float | None = None
     max_tokens: int | None = None
     workspace: str | None = None
@@ -931,11 +955,13 @@ def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None]
             workspace = a.split("=", 1)[1].strip()
         elif a in ("--files", "--file-tools"):
             files = True
+        elif a in ("--shell", "--shell-tools"):
+            shell = True
         elif not a.startswith("-"):
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-    return topic, mode, files, temperature, max_tokens, workspace
+return topic, mode, files, temperature, max_tokens, workspace, shell
 
 
 def start_run() -> str:
@@ -951,7 +977,8 @@ def run_task(topic: str, skill_mode: str = "lazy",
              enable_files: bool = False,
              temperature: float | None = None,
              max_tokens: int | None = None,
-             workspace: str | None = None) -> dict:
+             workspace: str | None = None,
+             enable_shell: bool = False) -> dict:
     """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
@@ -1016,19 +1043,31 @@ def run_task(topic: str, skill_mode: str = "lazy",
         log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
 
     log.info("========== LangGraph 统一任务实测开始 ==========")
-    _mt = current_max_tokens()
+_mt = current_max_tokens()
     log.info("主题=%s | 模型=%s | 温度=%.2f | 输出上限=%s | 技能模式=%s | "
              "实现=skill_loader | RUN_ID=%s",
              topic, os.environ.get("DEEPSEEK_MODEL"), current_temperature(),
              f"{_mt}" if _mt is not None else "不限", skill_mode, run_id)
-    log.info("工具集=%s | workspace 文件读写=%s | workspace 目录=%s",
-             [t.name for t in get_tools(enable_files)],
+    log.info("工具集=%s | workspace 文件读写=%s | workspace 目录=%s | shell 命令=%s",
+             [t.name for t in get_tools(enable_files, enable_shell)],
              ("启用（补充材料 %d 个）" % len(source_files)) if enable_files else "关闭",
-             _rel(str(ws_path)) if ws_path else "默认")
+             _rel(str(ws_path)) if ws_path else "默认",
+             "启用" if enable_shell else "关闭")
 
     # 用计算器工具做一次演示调用（工具调用稳定性 + 参数校验测试）
     log.info("演示 calculator: 2**10 + 3*7 = %s",
              calculator.invoke({"expression": "2**10 + 3*7"}))
+
+    # shell 命令演示：固定流水线的节点不会临时决定调工具，这里只做连通性与
+    # 安全逻辑（白名单 / 超时 / 输出截断）验证，不代表模型能自主执行命令。
+    shell_demo = {}
+    if enable_shell and SHELL_AVAILABLE:
+        shell_demo = shell_impl("git --version")
+        log.info("演示 shell: git --version → rc=%s, %s | 白名单: %s",
+                 shell_demo.get("returncode"),
+                 (shell_demo.get("stdout") or shell_demo.get("message") or "").strip()[:60],
+                 allowed_commands_text())
+        STATS["tool_calls"]["shell"] = 1
 
     app = build_graph()
     t0 = time.time()
@@ -1062,6 +1101,12 @@ def run_task(topic: str, skill_mode: str = "lazy",
                        "sources": source_files,
                        "written": [],
                        "workspace": _rel(str(ws_path)) if ws_path else ""},
+        "shell_tools": {"enabled": bool(enable_shell and SHELL_AVAILABLE),
+                        "whitelist": (allowed_commands_text()
+                                      if (enable_shell and SHELL_AVAILABLE) else ""),
+                        "demo": {k: shell_demo.get(k) for k in
+                                 ("ok", "returncode", "stdout", "duration_s")
+                                 if k in shell_demo}},
         "temperature": current_temperature(),
         "max_tokens": current_max_tokens(),
         "errors": all_errors,
@@ -1119,10 +1164,11 @@ def run_task(topic: str, skill_mode: str = "lazy",
 
 
 def main() -> None:
-    topic, skill_mode, enable_files, temperature, max_tokens, workspace = _parse_args()
+    (topic, skill_mode, enable_files, temperature,
+     max_tokens, workspace, enable_shell) = _parse_args()
     summary = run_task(topic, skill_mode, enable_files=enable_files,
                        temperature=temperature, max_tokens=max_tokens,
-                       workspace=workspace)
+                       workspace=workspace, enable_shell=enable_shell)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
     print(f"\n采样温度: {summary.get('temperature')} ｜ "
@@ -1133,6 +1179,13 @@ def main() -> None:
         print(f"  目录        : {ft.get('workspace') or '（默认）'}")
         print(f"  读入补充材料: {ft.get('sources') or '无'}")
         print(f"  写入简报    : {ft.get('written') or '无'}")
+    st = summary.get("shell_tools") or {}
+    if st.get("enabled"):
+        print("\n===== shell 命令（只读白名单） =====")
+        print(f"  允许的命令  : {st.get('whitelist')}")
+        demo = st.get("demo") or {}
+        print(f"  演示结果    : rc={demo.get('returncode')} "
+              f"{(demo.get('stdout') or '').strip()[:50]}")
 
 
 if __name__ == "__main__":
