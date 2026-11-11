@@ -102,6 +102,8 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | `agent_brief.py` | 主实现：状态图流水线 + MCP 接入 + Skills 对照层 + 双后端降级 + 统计输出 |
 | `agent_deepagents.py` | 统一任务的 **deepagents 原生 Skills** 实现（三级渐进式披露） |
 | `skill_loader.py` | 自建 Skills 运行时（对照实现）：注册表 + 按需加载 + 计量 |
+| `file_tools.py` | workspace 文件读写工具（默认关闭）：路径沙箱 + 类型白名单 + 原子写 |
+| `context_compression.py` | 对话历史压缩：超窗口 75% 时折成「摘要 + 最近 6 轮」，增量维护 |
 | `skills/` | 技能单元目录（每个技能一个 `SKILL.md`，符合 Agent Skills 规范） |
 | `smoke_test.py` | 环境导入 / 模型连通性 / 检索可用性冒烟测试 |
 | `logs/` | 运行日志 |
@@ -117,6 +119,27 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | Skills | deepagents 0.7.32（Agent Skills 规范，三级渐进式披露） |
 | 环境管理 | uv（`pyproject.toml` + `uv.lock`） |
 | Python | 3.13 |
+
+## 组员上手（从零跑通）
+
+**前置条件**：Git、[uv](https://docs.astral.sh/uv/)（Python 由 uv 托管，不必单独安装）。
+
+```powershell
+git clone https://github.com/agent-hdu-team/langgraph-agent-brief.git
+cd langgraph-agent-brief
+uv sync                                  # 按 uv.lock 精确安装
+Copy-Item .env.example .env               # 再编辑 .env 填入自己的 Key
+uv run python agent_brief.py "大模型上下文工程"
+```
+
+只需要两个 Key，都填在 `.env` 里（该文件已被 gitignore，不会提交）：
+
+| 变量 | 用途 | 缺失时 |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | 模型调用 | 401，跑不了 |
+| `DASHSCOPE_API_KEY` | 千问 MCP（检索 / 抓取） | **不影响跑通**，自动降级到 Bing + requests |
+
+下面「快速开始」是同一套命令的简版，供已经拿到代码时参考。
 
 ## 快速开始
 
@@ -147,6 +170,54 @@ start-ui.cmd                              # 或双击启动（Windows）
 | `agent_deepagents.py` | `output/brief_deepagents_<RUN_ID>.md` | `output/stats_deepagents_<RUN_ID>.json` | `logs/deepagents_<RUN_ID>.log` |
 
 > 未配置 `DASHSCOPE_API_KEY` 也能跑通：工具会自动降级为本地实现（Bing 检索 / requests+lxml 抓取）。
+
+## 接入通用 UI（agent-ui）
+
+本项目除了自带命令行与 Streamlit 界面，还导出了 `build_llm()` / `build_agent()` 两个工厂函数，
+可以被通用 Agent UI 当作后端加载。完整的适配器在 `agent-ui` 仓库的 `langgraph接入` 分支上。
+
+```powershell
+git clone https://github.com/agent-hdu-team/agent-ui.git
+cd agent-ui
+git checkout langgraph接入
+uv sync
+
+$env:LANGGRAPH_BRIEF_HOME = "<本项目的绝对路径，每人不同>"
+$env:AGENT_UI_BACKEND = "langgraph_brief"
+uv run agent-ui
+```
+
+启动后在界面左侧模型面板新建一个模型档案（填自己的 DeepSeek Key）并选中，即可对话。
+
+可选环境变量：
+
+| 变量 | 作用 |
+| --- | --- |
+| `LANGGRAPH_BRIEF_ENABLE_SHELL=1` | 把只读 shell 工具交给模型（默认关闭；开启后非版本查询类命令会弹审批） |
+| `LANGGRAPH_BRIEF_SHOW_REASONING=1` | 保留思维链事件（默认静音） |
+| `LANGGRAPH_BRIEF_SHOW_SKILL_IO=1` | 保留读取 `skills/` 的工具卡片（默认静音） |
+
+四个必须知道的点：
+
+1. **`LANGGRAPH_BRIEF_HOME` 是绝对路径，每人不同**，不能写死别人的目录；
+   若写进 `agent-ui/.env` 是**无效的**——agent-ui 的 `.env` 只被 pydantic-settings 读 `AGENT_UI_*` 前缀。
+2. **`agent-ui` 里只有 `mock` 与 `langgraph_brief` 真正可用**。`crew` / `deepagents` / `openai`
+   三个适配器依赖的 vendored 包不在仓库里（被 gitignore 排除），选中会报 `ModuleNotFoundError`。
+3. **我们的项目必须用同一个分支**：接 agent-ui 时若上游项目停在缺少 `build_agent()` 的旧提交上，
+   会直接报错。
+4. **改了代码要重启 agent-ui**：适配器是懒导入，模块一旦载入就缓存在 `sys.modules` 里，
+   换分支或改文件都不会热更新。
+
+## 常见报错
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `401 Authentication Fails` | `.env` 里的 Key 没换成自己的，或复制时带了空格 |
+| 检索结果很少 / 提到「已降级 Bing」 | 没配 `DASHSCOPE_API_KEY`，属预期降级 |
+| `未设置 LANGGRAPH_BRIEF_HOME` | 环境变量没设，或 `setx` 后没开新终端 |
+| 界面上后端名不是「LangGraph 简报」 | `AGENT_UI_BACKEND` 没生效 |
+| 单次运行 80 秒以上 | 用的是推理模型 `deepseek-flash`（输出约九成是思维链）；加 `--model=deepseek-chat` 可降到十几秒 |
+| `ModuleNotFoundError: crew_assistant` 等 | 选了 vendored 包缺失的后端，换 `mock` 或 `langgraph_brief` |
 
 ## 实测要点（同任务、同模型，两种实现各跑多次）
 
