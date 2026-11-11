@@ -49,10 +49,23 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
+
+#: 覆盖运行日志目录的环境变量。被外部 UI（如 agent-ui）嵌入时由宿主指定，
+#: 避免每跑一轮就往本项目仓库里塞一个日志文件。
+LOG_DIR_ENV = "LANGGRAPH_BRIEF_LOG_DIR"
+
+LOG_DIR = os.path.expanduser(os.environ.get(LOG_DIR_ENV) or os.path.join(BASE_DIR, "logs"))
 OUT_DIR = os.path.join(BASE_DIR, "output")
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
+
+
+def set_log_dir(path: str | os.PathLike) -> str:
+    """切换运行日志目录（宿主集成时调用，import 之后再设也生效）。"""
+    global LOG_DIR
+    LOG_DIR = os.path.expanduser(str(path))
+    os.makedirs(LOG_DIR, exist_ok=True)
+    return LOG_DIR
 
 
 def _rel(path: str) -> str:

@@ -36,10 +36,12 @@ import sys
 import time
 from collections import Counter, defaultdict
 from datetime import datetime
+from pathlib import Path
 
 from langchain_core.callbacks import BaseCallbackHandler
 
 from deepagents import create_deep_agent
+from deepagents.backends.composite import CompositeBackend
 from deepagents.backends.filesystem import FilesystemBackend
 
 from agent_brief import (
@@ -52,6 +54,8 @@ from agent_brief import (
     current_temperature,
     get_llm,
     get_tools,
+    log,
+    set_log_dir,
     set_max_tokens,
     set_temperature,
     setup_embedded_logging,
@@ -369,8 +373,9 @@ def build_agent(llm=None, workspace: str | None = None,
     同时拿到 token 流与节点更新。
 
     ``embedded=True``（默认）：日志只写本项目文件，**不输出到宿主控制台**——
-                作为库被 UI 嵌入时不该污染别人的终端。每次调用开一个新的日志文件。
-    ``embedded=False``：保留控制台输出，供本项目自己的命令行入口使用。
+                作为库被 UI 嵌入时不该污染别人的终端。同时 workspace 走**宽松**校验：
+                目录作用域由宿主决定（用户在界面上选了哪个就是哪个），不再二次判定。
+    ``embedded=False``：保留控制台输出，workspace 走**严格**校验，供本项目自己的入口使用。
     ``system_prompt=None`` 时用 :data:`DEFAULT_SYSTEM_PROMPT`；传空串表示不加自定义提示。
     """
     if temperature is not None:
@@ -383,12 +388,35 @@ def build_agent(llm=None, workspace: str | None = None,
         setup_run_logging(console=True)       # 本项目入口：文件 + 控制台
     if FILES_AVAILABLE:
         try:
-            use_workspace(workspace)
-        except Exception:                       # 非法目录回退默认，不阻断构建
-            use_workspace(None)
+            ws_root = use_workspace(workspace, strict=not embedded)
+        except Exception as exc:                # 只有真正非法的目录才会走到这里
+            log.warning("workspace %r 被拒绝，回退默认目录: %s",
+                        workspace, getattr(exc, "message", exc))
+            ws_root = use_workspace(None)
+    else:
+        ws_root = None
 
     tools = get_tools(enable_files)
-    backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
+    project_backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
+    # 技能文件在本项目里，而"工作目录"是调用方给的。两个根不能简单取其一：
+    # - 根设成项目 → 模型的 ls/glob 会看到本项目（甚至把交付物当成"用户文件"）；
+    # - 根设成用户目录 → skills=["/skills/"] 就找不到了。
+    # 所以用 CompositeBackend：只把 /skills/ 前缀路由回项目，其余全部落到用户目录。
+    #
+    # 注意 CompositeBackend **会剥掉前缀再委派**：``/skills/x`` 在目标 backend 上
+    # 就是 ``x``。因此目标根必须指向 ``<项目>/skills``，而不是项目根——
+    # 指错了会把整个项目（含 .venv、.env）挂到 ``/skills/`` 下面。
+    if ws_root is not None and Path(ws_root).resolve() != Path(BASE_DIR).resolve():
+        backend = CompositeBackend(
+            default=FilesystemBackend(root_dir=str(ws_root), virtual_mode=True),
+            routes={
+                SKILLS_SOURCE: FilesystemBackend(
+                    root_dir=os.path.join(BASE_DIR, "skills"), virtual_mode=True
+                )
+            },
+        )
+    else:
+        backend = project_backend
     return create_deep_agent(
         model=llm if llm is not None else get_llm(),
         tools=tools,
@@ -453,7 +481,11 @@ def run_task(topic: str = "大模型上下文工程",
 
         # ---- 构建 ----
         t_build = time.time()
-        agent = build_agent(llm=get_llm(), workspace=None, enable_files=enable_files,
+        # 注意：必须把已解析好的 ws_path 传下去。传 None 会让 build_agent 把 workspace
+        # 重置回默认目录，run_task 前面做的自定义目录选择就白费了。
+        agent = build_agent(llm=get_llm(),
+                            workspace=str(ws_path) if ws_path else None,
+                            enable_files=enable_files,
                             embedded=False)      # 本项目自己的入口：保留控制台输出
         build_s = round(time.time() - t_build, 2)
 

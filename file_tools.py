@@ -68,19 +68,23 @@ def set_workspace_root(path: str | os.PathLike | None) -> Path:
     return WORKSPACE_ROOT
 
 
-def validate_workspace(raw: str | os.PathLike) -> Path:
+def validate_workspace(raw: str | os.PathLike, *, strict: bool = True) -> Path:
     """校验用户指定的 workspace 是否可以作为文件工具根目录。
 
     默认的 ``<项目>/workspace`` 是项目内子目录，沙箱天然收敛；一旦允许外部目录，
-    就必须挡住那些"一旦指错就等于把机器交出去"的位置：
+    就必须挡住那些"一旦指错就等于把机器交出去"的位置。
 
-    - 必须是**已存在的目录**
-    - 拒绝盘符根（``C:\\``）、文件系统根（``/``）
-    - 拒绝用户主目录
-    - 拒绝项目根目录，以及项目根的**祖先**（否则模型能改到本项目源码）
-    - 拒绝含 ``.git`` 的目录（仓库内文本文件多为代码，写入破坏面太大）
+    两种模式：
 
-    返回解析后的绝对路径；不合法时抛 :class:`FileToolError`。
+    - ``strict=True``（默认，本项目命令行/自带界面）：额外拒绝用户主目录、项目根
+      及其**祖先**、含 ``.git`` 的目录——这些规则是为了"别让模型改写本项目源码"。
+    - ``strict=False``（被外部 UI 嵌入）：目录作用域由**宿主**决定（用户在界面上
+      明确选了一个工作目录），我们只挡住"显然不该写"的位置，即盘符根/文件系统根。
+      否则用户在界面选 ``D:\\某目录``（很可能是本项目的上级）会被我们拒绝并
+      **静默回退**到项目内 ``workspace/``，模型读写的地方就和用户以为的不一致了。
+
+    两种模式共同要求：必须是**已存在的目录**。返回解析后的绝对路径；
+    不合法时抛 :class:`FileToolError`。
     """
     try:
         p = Path(raw).expanduser()
@@ -93,9 +97,12 @@ def validate_workspace(raw: str | os.PathLike) -> Path:
         raise FileToolError("WORKSPACE_NOT_DIR", f"workspace 必须是目录: {p}")
     resolved = p.resolve()
 
-    # 盘符根 / 文件系统根
+    # 盘符根 / 文件系统根：两种模式都拒绝
     if str(resolved) == resolved.anchor or not resolved.name:
         raise FileToolError("WORKSPACE_TOO_BROAD", f"不能把 workspace 设成根目录: {resolved}")
+
+    if not strict:
+        return resolved
 
     home = Path.home().resolve()
     if resolved == home:
@@ -117,14 +124,15 @@ def validate_workspace(raw: str | os.PathLike) -> Path:
     return resolved
 
 
-def use_workspace(raw: str | os.PathLike | None) -> Path:
+def use_workspace(raw: str | os.PathLike | None, *, strict: bool = True) -> Path:
     """校验并切换 workspace；``None`` 表示恢复默认目录。
 
     每次运行开始时都应调用一次（即便传 None），以保证上一轮的自定义目录不会残留。
+    ``strict`` 的语义见 :func:`validate_workspace`。
     """
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return set_workspace_root(None)
-    return set_workspace_root(validate_workspace(raw))
+    return set_workspace_root(validate_workspace(raw, strict=strict))
 
 
 def workspace_root() -> Path:
