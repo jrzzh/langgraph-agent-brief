@@ -271,7 +271,7 @@ def _run_tab() -> None:
             f"文件边界：写入默认不覆盖；当前目录下有 {len(ws_files)} 个文本文件。"
         )
 
-# 采样参数：两种实现共用同一个模型实例，改动立即生效
+    # 采样参数：两种实现共用同一个模型实例，改动立即生效
     temp_col, max_col, hint_col = st.columns([1, 1, 2])
     with temp_col:
         temperature = st.number_input(
