@@ -961,7 +961,7 @@ def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None,
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-return topic, mode, files, temperature, max_tokens, workspace, shell
+    return topic, mode, files, temperature, max_tokens, workspace, shell
 
 
 def start_run() -> str:
@@ -1043,7 +1043,7 @@ def run_task(topic: str, skill_mode: str = "lazy",
         log.warning("技能层不可用（skill_loader 未导入），等同 --skills=off")
 
     log.info("========== LangGraph 统一任务实测开始 ==========")
-_mt = current_max_tokens()
+    _mt = current_max_tokens()
     log.info("主题=%s | 模型=%s | 温度=%.2f | 输出上限=%s | 技能模式=%s | "
              "实现=skill_loader | RUN_ID=%s",
              topic, os.environ.get("DEEPSEEK_MODEL"), current_temperature(),

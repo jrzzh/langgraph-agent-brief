@@ -361,6 +361,7 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
 
 def build_agent(llm=None, workspace: str | None = None,
                 enable_files: bool = True,
+                enable_shell: bool = False,
                 temperature: float | None = None,
                 max_tokens: int | None = None,
                 system_prompt: str | None = None,
@@ -396,7 +397,7 @@ def build_agent(llm=None, workspace: str | None = None,
     else:
         ws_root = None
 
-    tools = get_tools(enable_files)
+    tools = get_tools(enable_files, enable_shell)
     project_backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
     # 技能文件在本项目里，而"工作目录"是调用方给的。两个根不能简单取其一：
     # - 根设成项目 → 模型的 ls/glob 会看到本项目（甚至把交付物当成"用户文件"）；

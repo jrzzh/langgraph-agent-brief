@@ -242,10 +242,13 @@ def _to_json(fn, *args, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 @tool
 def shell(command: str, timeout: int = DEFAULT_TIMEOUT) -> str:
-    """在项目 workspace 内执行一条**只读**命令，返回退出码、stdout 与 stderr。
+    """在 workspace 内执行一条**只读**命令，返回退出码、stdout 与 stderr（JSON）。
 
-    只允许白名单内的命令（dir/ls/where/which、python --version、pip list、
-    git status/log/branch/diff/show、echo）；不允许管道、重定向、绝对路径与 ``..``。
+    白名单只放真实可执行文件（cmd 内建命令如 ``dir`` / ``echo`` 不在其中）：
+    ``where`` / ``which`` / ``python --version|-V`` / ``pip list|show|freeze|--version`` /
+    ``git status|branch|diff|--version``。完整清单见模块常量 ``ALLOWED_COMMANDS``。
+
+    不允许管道与重定向、绝对路径、``..``；子进程不继承任何密钥；默认 20 秒超时。
     参数名固定为 ``command``，以便外部前端的安全策略能够识别并触发审批。"""
     return _to_json(shell_impl, command, timeout)
 

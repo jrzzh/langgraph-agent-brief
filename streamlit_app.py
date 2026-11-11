@@ -320,7 +320,7 @@ def _run_tab() -> None:
                 if is_deep:
                     import agent_deepagents as dd
 
-summary = dd.run_task(topic.strip(), enable_files=enable_files,
+                    summary = dd.run_task(topic.strip(), enable_files=enable_files,
                                           temperature=temperature,
                                           max_tokens=max_tokens, workspace=_ws)
                 else:
