@@ -57,6 +57,7 @@ from agent_brief import (
     log,
     set_log_dir,
     set_max_tokens,
+    set_model,
     set_temperature,
     setup_embedded_logging,
     setup_run_logging,
@@ -441,15 +442,18 @@ def run_task(topic: str = "大模型上下文工程",
              temperature: float | None = None,
              max_tokens: int | None = None,
              workspace: str | None = None,
-             enable_shell: bool = False) -> dict:
+             enable_shell: bool = False,
+             model: str | None = None) -> dict:
     """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files`` / ``enable_shell`` 分别把 workspace 文件读写、只读 shell
     命令工具交给模型自主调用。
-    ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
+    ``temperature`` / ``max_tokens`` / ``model`` 为 None 时沿用当前值；
     ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
+    if model:
+        set_model(model)
     if temperature is not None:
         set_temperature(temperature)
     if max_tokens is not None:

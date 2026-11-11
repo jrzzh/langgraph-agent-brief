@@ -571,6 +571,17 @@ _PLACEHOLDER_KEY = "not-configured"
 _temperature: float = DEFAULT_TEMPERATURE
 _max_tokens: int | None = DEFAULT_MAX_TOKENS
 
+#: 当前生效的模型名
+DEFAULT_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
+_model: str = DEFAULT_MODEL
+
+
+#: 单次模型请求的超时（秒）。原来是 60s，叠上 LangChain 默认的 3 次重试，
+#: 一次网络卡顿最坏要 180 秒——实测出现过（plan 一步 181s）。压到 30s × 2 次 = 最坏 60s。
+LLM_TIMEOUT = float(os.environ.get("LANGGRAPH_BRIEF_LLM_TIMEOUT", "30"))
+#: 重试次数。1 表示最多发两次（首次 + 1 次重试）
+LLM_MAX_RETRIES = int(os.environ.get("LANGGRAPH_BRIEF_LLM_RETRIES", "1"))
+
 
 def _build_llm(temperature: float, max_tokens: int | None = None, *,
                model: str | None = None, api_key: str | None = None,
@@ -582,11 +593,12 @@ def _build_llm(temperature: float, max_tokens: int | None = None, *,
     真正的失败推迟到第一次请求——比在 import 阶段 KeyError 友好得多。
     """
     kwargs = dict(
-        model=model or os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
+        model=model or _model,
         api_key=api_key or os.environ.get("DEEPSEEK_API_KEY") or _PLACEHOLDER_KEY,
         base_url=base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         temperature=temperature,
-        timeout=60,
+        timeout=LLM_TIMEOUT,
+        max_retries=LLM_MAX_RETRIES,
     )
     if max_tokens is not None:          # None = 不传，沿用服务端默认
         kwargs["max_tokens"] = int(max_tokens)
@@ -671,6 +683,27 @@ def set_max_tokens(value: int | str | None) -> int | None:
 def current_temperature() -> float:
     """当前生效的采样温度。"""
     return _temperature
+
+
+def set_model(name: str) -> str:
+    """切换模型并重建实例，返回实际生效的模型名。
+
+    ``deepseek-flash`` 是推理模型，简报质量更好但输出里约九成是思维链——
+    同题实测输出 15,495 token、约 80 秒；``deepseek-chat`` 输出 956 token、
+    三个主要节点合计 6.4 秒。用它做对照或赶时间时可以换。
+    """
+    global _model
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("model 不能为空")
+    _model = name
+    _rebuild()
+    return _model
+
+
+def current_model() -> str:
+    """当前生效的模型名。"""
+    return _model
 
 
 def current_max_tokens() -> int | None:
@@ -985,22 +1018,26 @@ def build_graph():
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None, bool]:
+def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None, bool,
+                           str | None]:
     """解析命令行。
 
     位置参数为主题；``--skills=lazy|eager|off`` 选择技能加载模式；
     ``--files`` 开启 workspace 文件读写；``--temperature=0.3`` 调整采样温度；
     ``--max-tokens=4096`` 限制单次输出（默认不限）；``--workspace=路径`` 指定文件根目录；
-    ``--shell`` 开启只读 shell 命令工具。
+    ``--shell`` 开启只读 shell 命令工具；``--model=deepseek-chat`` 换模型。
     """
     topic, mode, files = "大模型上下文工程", "lazy", False
     shell = False
     temperature: float | None = None
     max_tokens: int | None = None
     workspace: str | None = None
+    model: str | None = None
     for a in sys.argv[1:]:
         if a.startswith("--skills="):
             mode = a.split("=", 1)[1].strip().lower()
+        elif a.startswith("--model="):
+            model = a.split("=", 1)[1].strip() or None
         elif a.startswith("--temperature="):
             try:
                 temperature = float(a.split("=", 1)[1].strip())
@@ -1022,7 +1059,7 @@ def _parse_args() -> tuple[str, str, bool, float | None, int | None, str | None,
             topic = a
     if mode not in ("lazy", "eager", "off"):
         mode = "lazy"
-    return topic, mode, files, temperature, max_tokens, workspace, shell
+    return topic, mode, files, temperature, max_tokens, workspace, shell, model
 
 
 def start_run() -> str:
@@ -1039,13 +1076,14 @@ def run_task(topic: str, skill_mode: str = "lazy",
              temperature: float | None = None,
              max_tokens: int | None = None,
              workspace: str | None = None,
-             enable_shell: bool = False) -> dict:
+             enable_shell: bool = False,
+             model: str | None = None) -> dict:
     """执行一次「自建 skill_loader」实现，返回汇总（含简报正文与产物路径）。
 
     同时供命令行 ``main()`` 与 Streamlit UI 调用，因此不读取 sys.argv。
     ``enable_files=True`` 时启用 workspace 文件读写：
     运行前把 ``<workspace>/sources/`` 读入作为补充材料，运行后把简报写入 ``<workspace>/briefs/``。
-    ``temperature`` / ``max_tokens`` 为 None 时沿用当前值；
+    ``temperature`` / ``max_tokens`` / ``model`` 为 None 时沿用当前值；
     ``workspace`` 为 None 时恢复默认的项目内 ``workspace/`` 目录。
     """
     global REGISTRY, STATS
@@ -1054,6 +1092,8 @@ def run_task(topic: str, skill_mode: str = "lazy",
         set_temperature(temperature)
     if max_tokens is not None:
         set_max_tokens(max_tokens)
+    if model:
+        set_model(model)
     run_id = start_run()
     REGISTRY = None
 
@@ -1226,10 +1266,11 @@ def run_task(topic: str, skill_mode: str = "lazy",
 
 def main() -> None:
     (topic, skill_mode, enable_files, temperature,
-     max_tokens, workspace, enable_shell) = _parse_args()
+     max_tokens, workspace, enable_shell, model) = _parse_args()
     summary = run_task(topic, skill_mode, enable_files=enable_files,
                        temperature=temperature, max_tokens=max_tokens,
-                       workspace=workspace, enable_shell=enable_shell)
+                       workspace=workspace, enable_shell=enable_shell,
+                       model=model)
     print("\n===== 最终简报 =====\n")
     print(summary.get("brief", ""))
     print(f"\n采样温度: {summary.get('temperature')} ｜ "

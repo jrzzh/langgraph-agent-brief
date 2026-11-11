@@ -271,6 +271,15 @@ def _run_tab() -> None:
             f"文件边界：写入默认不覆盖；当前目录下有 {len(ws_files)} 个文本文件。"
         )
 
+    # 模型：flash 是推理模型，简报更厚但慢；chat 没有思维链，快 6 倍以上
+    model_choice = st.selectbox(
+        "模型",
+        options=["deepseek-flash", "deepseek-chat"],
+        index=0,
+        help="deepseek-flash：推理模型，输出里约九成是思维链，同题实测 86 秒、来源引用更充分；"
+             "deepseek-chat：无思维链，同题实测 13 秒、正文长度相当但引用来源更少。",
+    )
+
     # 采样参数：两种实现共用同一个模型实例，改动立即生效
     temp_col, max_col, hint_col = st.columns([1, 1, 2])
     with temp_col:
@@ -322,12 +331,14 @@ def _run_tab() -> None:
 
                     summary = dd.run_task(topic.strip(), enable_files=enable_files,
                                           temperature=temperature,
-                                          max_tokens=max_tokens, workspace=_ws)
+                                          max_tokens=max_tokens, workspace=_ws,
+                                          model=model_choice)
                 else:
                     summary = ab.run_task(topic.strip(), skill_mode,
                                           enable_files=enable_files,
                                           temperature=temperature,
-                                          max_tokens=max_tokens, workspace=_ws)
+                                          max_tokens=max_tokens, workspace=_ws,
+                                          model=model_choice)
             except Exception as exc:                       # noqa: BLE001 - 界面需显示原因
                 st.error(f"运行失败：{type(exc).__name__}: {exc}")
                 return
