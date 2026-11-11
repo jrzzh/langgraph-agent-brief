@@ -271,26 +271,7 @@ def _run_tab() -> None:
             f"文件边界：写入默认不覆盖；当前目录下有 {len(ws_files)} 个文本文件。"
         )
 
-# 只读 shell 命令开关（默认关闭）：白名单极窄，且不经 shell 解释器
-    enable_shell = st.checkbox(
-        "启用 shell 命令（只读白名单）",
-        value=False,
-        help="只允许 git status/branch/diff、python --version、pip list 等只读命令；"
-             "禁止管道与重定向、禁止绝对路径与 ..、子进程不继承任何密钥。",
-    )
-    if enable_shell:
-        st.caption(
-            f"命令边界：{ab.allowed_commands_text() if ab.SHELL_AVAILABLE else '（shell 工具不可用）'}；"
-            "不含 `& | ; > <`、不含 `..`、超时 20 秒、输出截断。"
-        )
-        if not is_deep:
-            st.caption(
-                "注意：固定 6 节点流水线不会由模型临时调用工具，"
-                "因此该实现下 shell 仅在启动时执行一次连通性演示；"
-                "模型自主执行命令只在 deepagents 实现下成立。"
-            )
-
-    # 采样参数：两种实现共用同一个模型实例，改动立即生效
+# 采样参数：两种实现共用同一个模型实例，改动立即生效
     temp_col, max_col, hint_col = st.columns([1, 1, 2])
     with temp_col:
         temperature = st.number_input(
@@ -339,16 +320,14 @@ def _run_tab() -> None:
                 if is_deep:
                     import agent_deepagents as dd
 
-                    summary = dd.run_task(topic.strip(), enable_files=enable_files,
+summary = dd.run_task(topic.strip(), enable_files=enable_files,
                                           temperature=temperature,
-                                          max_tokens=max_tokens, workspace=_ws,
-                                          enable_shell=enable_shell)
+                                          max_tokens=max_tokens, workspace=_ws)
                 else:
                     summary = ab.run_task(topic.strip(), skill_mode,
                                           enable_files=enable_files,
                                           temperature=temperature,
-                                          max_tokens=max_tokens, workspace=_ws,
-                                          enable_shell=enable_shell)
+                                          max_tokens=max_tokens, workspace=_ws)
             except Exception as exc:                       # noqa: BLE001 - 界面需显示原因
                 st.error(f"运行失败：{type(exc).__name__}: {exc}")
                 return
@@ -439,17 +418,6 @@ def main() -> None:
                 st.caption("workspace/ 目前没有文本文件。")
         else:
             st.warning("file_tools 未加载，文件读写不可用。")
-        st.divider()
-        st.header("命令边界")
-        st.write("只读白名单，不经 shell 解释器，子进程不继承任何密钥。")
-        if ab.SHELL_AVAILABLE:
-            st.caption(ab.allowed_commands_text())
-            st.caption(
-                "禁止 `& | ; < > ^` 与换行；禁止绝对路径和 `..`；"
-                "默认 20 秒超时；stdout 截断至 10 万字符。"
-            )
-        else:
-            st.warning("shell_tools 未加载，命令工具不可用。")
 
     tabs = st.tabs(["运行实验", "历史记录"])
     with tabs[0]:
