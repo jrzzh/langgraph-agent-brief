@@ -103,6 +103,8 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | --- | --- |
 | `agent.py` | `build_llm` / `build_agent`：只认 `tools` / `skills_dir` / `workspace` 三个注入点 |
 | `runtime.py` | `ToolSpec` / `ToolBox`：工具声明与按名选择（对齐 agent-ui 的 `tool_catalog` 契约） |
+| `tool_specs.py` | 内置工具的**纯数据**目录（名字 + 描述），列目录时毫秒级返回，不加载实现 |
+| `tools.py` | 内置工具的**自包含**实现：Bing 检索 / 网页正文 / 计算器 / 文件读写，不依赖 MCP |
 | `context_compression.py` | 对话历史压缩：超窗口 75% 时折成「摘要 + 最近 6 轮」，增量维护 |
 
 **测试案例 `example/`**
