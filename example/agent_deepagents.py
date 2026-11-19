@@ -40,15 +40,14 @@ from pathlib import Path
 
 from langchain_core.callbacks import BaseCallbackHandler
 
-from deepagents import create_deep_agent
-from deepagents.backends.composite import CompositeBackend
-from deepagents.backends.filesystem import FilesystemBackend
+from langgraph_agent import build_agent as build_core_agent
 
 from agent_brief import (
     BASE_DIR,
     FILES_AVAILABLE,
     LOG_DIR,
     OUT_DIR,
+    SKILLS_DIR,
     _rel,
     current_max_tokens,
     current_temperature,
@@ -79,7 +78,7 @@ DEFAULT_SYSTEM_PROMPT = """\
   不要为了"更全面"反复检索——每次检索都要用户多等好几秒；
 - 需要检索就直接调用工具，拿到结果后径直作答，不要边做边解说。
 """
-SKILLS_DIR = os.path.join(BASE_DIR, "skills")
+SKILLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
 
 # 从工具入参里解析技能路径：skills/<name>/SKILL.md（兼容正反斜杠）
 SKILL_PATH_RE = re.compile(r"skills[/\\]([^/\\\"']+)[/\\]SKILL\.md", re.I)
@@ -285,7 +284,7 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
     L.append(f"主题    : {topic}")
     L.append(f"模型    : {os.environ.get('DEEPSEEK_MODEL')}")
     L.append(f"技能源  : {SKILLS_SOURCE}")
-    L.append("backend : FilesystemBackend(virtual_mode=True，根目录=项目根)")
+    L.append("backend : 内核 CompositeBackend（默认=工作目录，/skills/ 指向 example/skills）")
     L.append(f"agent 构建耗时: {s['build_elapsed_s']}s（含 SkillsMiddleware 扫描技能）")
     L.append("=" * 78)
 
@@ -361,6 +360,17 @@ def build_report(h: TimingHandler, s: dict, run_id: str, topic: str,
     L.append("=" * 78)
     return L
 
+def _resolve_workspace(workspace, embedded: bool):
+    """解析本轮工作目录：被嵌入时宽松校验，本项目入口严格校验。"""
+    if not FILES_AVAILABLE:
+        return None
+    try:
+        return use_workspace(workspace, strict=not embedded)
+    except Exception as exc:                    # 只有真正非法的目录才会走到这里
+        log.warning("workspace %r 被拒绝，回退默认目录: %s",
+                    workspace, getattr(exc, "message", exc))
+        return use_workspace(None)
+
 
 def build_agent(llm=None, workspace: str | None = None,
                 enable_files: bool = True,
@@ -368,68 +378,35 @@ def build_agent(llm=None, workspace: str | None = None,
                 max_tokens: int | None = None,
                 system_prompt: str | None = None,
                 *, embedded: bool = True):
-    """构造一个可直接 ``.stream()`` 的 deepagents 图（外部集成入口）。
+    """通用内核 + 本案例的注入。
 
-    供通用 UI（如 agent-ui）按每轮请求现构造：模型实例由调用方传入，
-    ``workspace`` 会作为文件工具的根目录。返回的是 LangGraph 编译后的图，
-    调用方可用 ``agent.stream({"messages": [...]}, stream_mode=["messages","updates"])``
-    同时拿到 token 流与节点更新。
+    「通用 agent 循环」在 :mod:`langgraph_agent` 里，只认 ``tools`` / ``skills_dir`` /
+    ``workspace`` 三个注入点，不含任何 MCP 或技能内容。这里负责把它们换成
+    **本案例的实现**：
 
-    ``embedded=True``（默认）：日志只写本项目文件，**不输出到宿主控制台**——
-                作为库被 UI 嵌入时不该污染别人的终端。同时 workspace 走**宽松**校验：
-                目录作用域由宿主决定（用户在界面上选了哪个就是哪个），不再二次判定。
-    ``embedded=False``：保留控制台输出，workspace 走**严格**校验，供本项目自己的入口使用。
-    ``system_prompt=None`` 时用 :data:`DEFAULT_SYSTEM_PROMPT`；传空串表示不加自定义提示。
+    - ``tools``：``get_tools()`` 给出的 MCP 检索/抓取工具（缺 Key 会自动降级本地实现）；
+    - ``skills_dir``：``example/skills/`` 下的本地技能包；
+    - ``workspace``：本轮工作目录（文件工具的根，也是模型看到的 ``/``）。
+
+    通用 UI（如 agent-ui）接的是**内核**；需要本案例这套工具时，直接调这个包装。
     """
     if temperature is not None:
         set_temperature(temperature)
     if max_tokens is not None:
         set_max_tokens(max_tokens)
     if embedded:
-        setup_run_logging(console=False)      # 外部 UI：只写文件
+        setup_run_logging(console=False)        # 外部 UI：只写文件，不打扰宿主终端
     else:
-        setup_run_logging(console=True)       # 本项目入口：文件 + 控制台
-    if FILES_AVAILABLE:
-        try:
-            ws_root = use_workspace(workspace, strict=not embedded)
-        except Exception as exc:                # 只有真正非法的目录才会走到这里
-            log.warning("workspace %r 被拒绝，回退默认目录: %s",
-                        workspace, getattr(exc, "message", exc))
-            ws_root = use_workspace(None)
-    else:
-        ws_root = None
+        setup_run_logging(console=True)         # 本项目入口：文件 + 控制台
 
+    ws_root = _resolve_workspace(workspace, embedded)
     tools = get_tools(enable_files)
-    project_backend = FilesystemBackend(root_dir=BASE_DIR, virtual_mode=True)
-    # 技能文件在本项目里，而"工作目录"是调用方给的。两个根不能简单取其一：
-    # - 根设成项目 → 模型的 ls/glob 会看到本项目（甚至把交付物当成"用户文件"）；
-    # - 根设成用户目录 → skills=["/skills/"] 就找不到了。
-    # 所以用 CompositeBackend：只把 /skills/ 前缀路由回项目，其余全部落到用户目录。
-    #
-    # 注意 CompositeBackend **会剥掉前缀再委派**：``/skills/x`` 在目标 backend 上
-    # 就是 ``x``。因此目标根必须指向 ``<项目>/skills``，而不是项目根——
-    # 指错了会把整个项目（含 .venv、.env）挂到 ``/skills/`` 下面。
-    if ws_root is not None and Path(ws_root).resolve() != Path(BASE_DIR).resolve():
-        backend = CompositeBackend(
-            default=FilesystemBackend(root_dir=str(ws_root), virtual_mode=True),
-            routes={
-                SKILLS_SOURCE: FilesystemBackend(
-                    root_dir=os.path.join(BASE_DIR, "skills"), virtual_mode=True
-                )
-            },
-        )
-    else:
-        backend = project_backend
-    return create_deep_agent(
-        model=llm if llm is not None else get_llm(),
+    return build_core_agent(
+        llm if llm is not None else get_llm(),
         tools=tools,
-        backend=backend,
-        skills=[SKILLS_SOURCE],
-        # deepagents 会把这段**追加在**它自己的基础提示之前，所以技能机制不受影响，
-        # 只是把"汇报过程"这类噪声压下去（模型默认爱说"我先读一下技能…"）
-        system_prompt=(
-            DEFAULT_SYSTEM_PROMPT if system_prompt is None else system_prompt
-        ) or None,
+        skills_dir=SKILLS_DIR,
+        workspace=str(ws_root) if ws_root else BASE_DIR,
+        system_prompt=system_prompt,
     )
 
 
@@ -437,7 +414,7 @@ def run_task(topic: str = "大模型上下文工程",
              enable_files: bool = False,
              temperature: float | None = None,
              max_tokens: int | None = None,
-workspace: str | None = None,
+             workspace: str | None = None,
              model: str | None = None) -> dict:
     """执行一次「deepagents 官方原生 Skills」实现，返回汇总（含简报与日志文本）。
 

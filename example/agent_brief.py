@@ -47,7 +47,12 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # 运行结果与统计目录
 # ---------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+#: 本文件所在目录（example/）：技能、物料等**案例资产**都在这里
+EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
+#: 仓库根：logs/ output/ workspace/ 等**运行产物**留在根目录，文档与旧路径都指向那里
+BASE_DIR = os.path.dirname(EXAMPLE_DIR)
+#: 技能目录随案例一起放进 example/
+SKILLS_DIR = os.path.join(EXAMPLE_DIR, "skills")
 RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 #: 覆盖运行日志目录的环境变量。被外部 UI（如 agent-ui）嵌入时由宿主指定，

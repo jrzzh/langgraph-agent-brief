@@ -17,7 +17,7 @@ exit /b 0
 :portbusy
 echo [ERROR] Port 8501 is occupied by another program (not this console).
 echo [ERROR] Start on a free port instead, for example:
-echo           uv run streamlit run streamlit_app.py --server.port 8599
+echo           uv run streamlit run example\streamlit_app.py --server.port 8599
 echo.
 pause
 exit /b 1
@@ -42,8 +42,8 @@ rem 优先用 uv（项目由 pyproject.toml + uv.lock 管理）；找不到 uv �
 where uv >nul 2>&1
 if errorlevel 1 (
   echo [WARN] uv not found on PATH - falling back to the project virtualenv
-  ".venv\Scripts\python.exe" -m streamlit run streamlit_app.py
+  ".venv\Scripts\python.exe" -m streamlit run example\streamlit_app.py
 ) else (
-  uv run streamlit run streamlit_app.py
+  uv run streamlit run example\streamlit_app.py
 )
 pause

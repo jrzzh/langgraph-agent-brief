@@ -23,7 +23,8 @@ from pathlib import Path, PurePosixPath
 
 from langchain_core.tools import tool
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+#: 本文件在 example/ 下；workspace 仍指向仓库根的 workspace/（运行产物留在根目录）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_ROOT = Path(BASE_DIR) / "workspace"
 
 #: 当前生效的 workspace 根目录（可由 set_workspace_root 覆盖）
