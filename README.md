@@ -56,7 +56,7 @@ tools = await client.get_tools()      # 自动发现: search_pro / web_fetch
 一个 `SKILL.md`（frontmatter 写元信息，正文为指令），新增技能只需写一个 Markdown 文件，
 **不改代码**。
 
-**实现采用 LangChain 官方 `deepagents` 的原生 Skills**（入口 `agent_deepagents.py`）：
+**实现采用 LangChain 官方 `deepagents` 的原生 Skills**（入口 `example/agent_deepagents.py`）：
 
 ```python
 agent = create_deep_agent(model=llm, tools=TOOLS,
@@ -70,8 +70,8 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | 2 Instructions | 完整 `SKILL.md` | 判定相关后 `read_file` | 5 个正文 **1800 token** |
 | 3 Resources | `references/` `scripts/` | 指令引用时按需 | 本项目未使用 |
 
-同一批技能文件另有两种实现（详见 [`skills/README.md`](skills/README.md)）：
-自建 [`skill_loader.py`](skill_loader.py)（零依赖、可计量，`agent_brief.py --skills=lazy|eager|off`）
+同一批技能文件另有两种实现（详见 [`skills/README.md`](example/skills/README.md)）：
+自建 [`skill_loader.py`](example/skill_loader.py)（零依赖、可计量，`example/agent_brief.py --skills=lazy|eager|off`）
 与第三方 `langchain-agentskills`（已评估，零新增依赖）。
 
 ### 实测（同任务、同模型）
@@ -97,17 +97,28 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 
 ## 文件说明
 
+**通用内核 `src/langgraph_agent/`**（可安装为包，不含任何 MCP / 技能内容）
+
 | 文件 | 说明 |
 | --- | --- |
-| `agent_brief.py` | 主实现：状态图流水线 + MCP 接入 + Skills 对照层 + 双后端降级 + 统计输出 |
-| `agent_deepagents.py` | 统一任务的 **deepagents 原生 Skills** 实现（三级渐进式披露） |
-| `skill_loader.py` | 自建 Skills 运行时（对照实现）：注册表 + 按需加载 + 计量 |
-| `file_tools.py` | workspace 文件读写工具（默认关闭）：路径沙箱 + 类型白名单 + 原子写 |
+| `agent.py` | `build_llm` / `build_agent`：只认 `tools` / `skills_dir` / `workspace` 三个注入点 |
+| `runtime.py` | `ToolSpec` / `ToolBox`：工具声明与按名选择（对齐 agent-ui 的 `tool_catalog` 契约） |
 | `context_compression.py` | 对话历史压缩：超窗口 75% 时折成「摘要 + 最近 6 轮」，增量维护 |
+
+**测试案例 `example/`**
+
+| 文件 | 说明 |
+| --- | --- |
+| `agent_deepagents.py` | 内核的包装：注入 MCP 工具 + 本地技能（模型自主 ReAct 循环） |
+| `agent_brief.py` | 对照实现：6 节点固定流水线 + 自建 `skill_loader` + 统计输出 |
+| `skill_loader.py` | 自建 Skills 运行时：注册表 + 按需加载 + 计量 |
+| `file_tools.py` | workspace 文件读写工具（默认关闭）：路径沙箱 + 类型白名单 + 原子写 |
+| `mcps/qwen_mcp.py` | MCP 检索 / 抓取工具源：千问 MCP + Bing/requests 两级降级 + 进程内缓存 |
 | `skills/` | 技能单元目录（每个技能一个 `SKILL.md`，符合 Agent Skills 规范） |
+| `streamlit_app.py` | 可视化测试台：两种实现二选一，可回看日志与统计 |
 | `smoke_test.py` | 环境导入 / 模型连通性 / 检索可用性冒烟测试 |
-| `logs/` | 运行日志 |
-| `output/` | 技术简报与统计 JSON |
+
+**其它**：`scripts/` 交付物生成脚本；`logs/` 运行日志；`output/` 简报与统计 JSON。
 
 ## 技术栈
 
@@ -129,7 +140,7 @@ git clone https://github.com/agent-hdu-team/langgraph-agent-brief.git
 cd langgraph-agent-brief
 uv sync                                  # 按 uv.lock 精确安装
 Copy-Item .env.example .env               # 再编辑 .env 填入自己的 Key
-uv run python agent_brief.py "大模型上下文工程"
+uv run python example/agent_brief.py "大模型上下文工程"
 ```
 
 只需要两个 Key，都填在 `.env` 里（该文件已被 gitignore，不会提交）：
@@ -152,13 +163,13 @@ cp .env.example .env      # Windows: copy .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY 与 DASHSCOPE_API_KEY
 
 # 3) 运行统一任务（本项目的两套实现，任选其一）
-uv run python agent_deepagents.py "大模型上下文工程"                  # ② 官方 deepagents 原生 Skills
-uv run python agent_brief.py "大模型上下文工程"                       # ① 自建 Skills 层，默认 --skills=lazy
-uv run python agent_brief.py "大模型上下文工程" --skills=eager        # ① 对照：启动时全量加载技能
-uv run python agent_brief.py "大模型上下文工程" --skills=off          # ① 基线：不使用技能
+uv run python example/agent_deepagents.py "大模型上下文工程"                  # ② 官方 deepagents 原生 Skills
+uv run python example/agent_brief.py "大模型上下文工程"                       # ① 自建 Skills 层，默认 --skills=lazy
+uv run python example/agent_brief.py "大模型上下文工程" --skills=eager        # ① 对照：启动时全量加载技能
+uv run python example/agent_brief.py "大模型上下文工程" --skills=off          # ① 基线：不使用技能
 
 # 4) 图形界面（Skills 实现二选一：自建 skill_loader / 官方 deepagents，可看运行日志）
-uv run streamlit run streamlit_app.py     # → http://localhost:8501
+uv run streamlit run example/streamlit_app.py     # → http://localhost:8501
 start-ui.cmd                              # 或双击启动（Windows）
 ```
 
@@ -240,7 +251,7 @@ uv run agent-ui
 - **模型兼容性**：切换模型只改 `DEEPSEEK_MODEL` 一个环境变量、代码零改动
   （同一任务下另一模型为 11.82 s / 4 127 token）
 
-> 多次运行的完整数据、受控对照（lazy vs eager）与取舍分析见 [`skills/README.md`](skills/README.md) §四。
+> 多次运行的完整数据、受控对照（lazy vs eager）与取舍分析见 [`skills/README.md`](example/skills/README.md) §四。
 
 ## 已知限制
 
