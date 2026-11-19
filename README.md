@@ -142,6 +142,7 @@ git clone https://github.com/agent-hdu-team/langgraph-agent-brief.git
 cd langgraph-agent-brief
 uv sync                                  # 按 uv.lock 精确安装
 Copy-Item .env.example .env               # 再编辑 .env 填入自己的 Key
+uv run python scripts/selfcheck.py        # 先自检：8 项，2 秒，不花钱
 uv run python example/agent_brief.py "大模型上下文工程"
 ```
 
