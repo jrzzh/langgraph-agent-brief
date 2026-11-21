@@ -72,18 +72,70 @@ def check_lazy_import() -> str:
     return ""
 
 
-@step("工具目录 = 6 项且为纯数据")
+@step("工具目录 = 7 项且为纯数据")
 def check_catalog() -> str:
     sys.path.insert(0, str(SRC))
     from langgraph_agent import tool_specs
 
     items = tool_specs.catalog()
-    assert len(items) == 6, f"期望 6 项，实际 {len(items)}"
+    assert len(items) == 7, f"期望 7 项，实际 {len(items)}"
     names = [name for name, _, _ in items]
     for expected in ("search_web", "read_webpage", "calculator",
-                     "read_file", "write_file", "list_directory"):
+                     "read_file", "write_file", "list_directory", "shell"):
         assert expected in names, f"目录里缺少 {expected}"
+    # shell 必须默认关闭：它是唯一能触碰真实进程的工具
+    default_on = {name: enabled for name, _, enabled in items}
+    assert default_on["shell"] is False, "shell 默认应该是关的"
     return f"{names}"
+
+
+@step("shell 三级分级（放行 / 审批 / 直接拒绝）")
+def check_shell_tiers() -> str:
+    sys.path.insert(0, str(SRC))
+    import json
+
+    from langgraph_agent import shell
+
+    # ① 放行：查位置、查版本
+    assert shell.needs_approval("where python") is False, "where 不该弹窗"
+    assert shell.needs_approval("python --version") is False, "--version 不该弹窗"
+    # ② 需审批：会暴露仓库结构 / 已装包清单
+    assert shell.needs_approval("git status") is True, "git status 应该弹窗"
+    assert shell.needs_approval("pip list") is True, "pip list 应该弹窗"
+
+    ws = REPO / "workspace"
+
+    def run(command: str, policy) -> dict:
+        # 走工具真实路径：_to_json 把 ShellToolError 转成错误码
+        return json.loads(shell._to_json(shell.shell_impl, command, 20, policy, root=ws))
+
+    # ③ 白名单外：不走审批，直接拒（不能给模型"申请执行任意命令"的口子）
+    asked: list[str] = []
+    denied = run("rm -rf /", lambda q: asked.append(q) or True)
+    assert denied["code"] == "COMMAND_NOT_ALLOWED", denied
+    assert not asked, "白名单外的命令不该弹窗"
+
+    # ④ 用户拒绝 → APPROVAL_DENIED，且命令没跑
+    refused = run("git status", lambda q: False)
+    assert refused["code"] == "APPROVAL_DENIED", refused
+
+    # ⑤ 用户允许 → 正常执行
+    allowed = run("git branch --version", lambda q: True)
+    assert allowed.get("returncode") is not None, allowed
+    return ""
+
+
+@step("shell 子进程看不到密钥")
+def check_shell_env() -> str:
+    sys.path.insert(0, str(SRC))
+    from langgraph_agent import shell
+
+    leaked = [
+        key for key in ("DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY")
+        if key.upper() in shell._safe_env()
+    ]
+    assert not leaked, f"子进程环境里出现了密钥：{leaked}"
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +293,8 @@ def main() -> int:
     check_workspace_gate()
     check_sandbox()
     check_calculator()
+    check_shell_tiers()
+    check_shell_env()
     check_example_imports()
     check_mcp_configure()
     if args.net or args.all:

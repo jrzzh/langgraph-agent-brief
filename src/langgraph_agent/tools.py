@@ -202,11 +202,15 @@ def build_tools(
     *,
     workspace: str | os.PathLike | None = None,
     read_paths: Sequence[str | os.PathLike] = (),
+    shell_policy=None,
 ) -> list[Any]:
     """按名字挑出工具对象。
 
     ``names`` 为 ``None`` 表示全给；给了 workspace / read_paths 才有文件工具。
     未知名字直接忽略（UI 可能残留旧开关），不会因此崩掉整轮。
+
+    ``shell_policy`` 是 shell 工具的审批回调：给了它，需要确认的命令会先问用户；
+    不给则白名单是唯一防线（命令行场景）。
     """
     wanted = set(names) if names is not None else None
     root = Path(workspace).expanduser() if workspace else None
@@ -225,6 +229,12 @@ def build_tools(
         if root is None and not read_paths:
             continue
         picked.append(item)
+
+    # shell 单独处理：没有 workspace 就不给（cwd 必须锁在沙箱内）
+    if (wanted is None or "shell" in wanted) and root is not None:
+        from .shell import make_shell_tool
+
+        picked.append(make_shell_tool(policy=shell_policy, workspace=root))
     return picked
 
 

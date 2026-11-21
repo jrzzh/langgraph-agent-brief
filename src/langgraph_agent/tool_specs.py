@@ -46,6 +46,13 @@ TOOL_SPECS: tuple[BuiltinToolSpec, ...] = (
         "列出当前工作空间或附件目录的内容。",
         requires_read_paths=True,
     ),
+    BuiltinToolSpec(
+        "shell",
+        "在工作空间内执行一条只读命令（白名单：where/which、python --version、"
+        "pip list、git status 等），返回退出码与输出。非版本查询需用户确认。",
+        requires_workspace=True,
+        enabled_by_default=False,      # 风险最高，默认不给模型
+    ),
 )
 
 TOOL_NAMES = frozenset(spec.name for spec in TOOL_SPECS)
