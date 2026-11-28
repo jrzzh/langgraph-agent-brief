@@ -236,7 +236,7 @@ def build_tools(
         from .browser import browser_available, make_browser_tools
 
         if browser_available():
-            for item in make_browser_tools():
+            for item in make_browser_tools(workspace=root):
                 if wanted is None or item.name in wanted:
                     picked.append(item)
 

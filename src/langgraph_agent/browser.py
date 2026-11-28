@@ -66,13 +66,13 @@ def browser_available() -> bool:
     return find_browser() is not None
 
 
-def _resolve_target(url: str) -> str:
+def _resolve_target(url: str, base_dir: str | os.PathLike | None = None) -> str:
     """``path/to/index.html`` 这种相对路径转成 file:// URI；远程地址原样返回。"""
     if "://" in url:
         return url
     path = Path(url).expanduser()
     if not path.is_absolute():
-        path = Path.cwd() / path
+        path = Path(base_dir).expanduser() / path if base_dir else Path.cwd() / path
     return path.resolve().as_uri()
 
 
@@ -109,12 +109,13 @@ def _decode(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def browser_dom(url: str, wait_ms: int = DEFAULT_WAIT_MS, timeout: int = DEFAULT_TIMEOUT) -> str:
+def browser_dom(url: str, wait_ms: int = DEFAULT_WAIT_MS, timeout: int = DEFAULT_TIMEOUT,
+                *, base_dir: str | os.PathLike | None = None) -> str:
     """导出渲染后的 DOM 与控制台报错（JSON）。"""
     browser = find_browser()
     if browser is None:
         return json.dumps({"ok": False, "error": "本机没有找到 Chrome 或 Edge"}, ensure_ascii=False)
-    target = _resolve_target(url)
+    target = _resolve_target(url, base_dir)
     started = time.perf_counter()
     try:
         proc = _run(browser, [
@@ -152,6 +153,8 @@ def browser_screenshot(
     height: int = DEFAULT_HEIGHT,
     wait_ms: int = DEFAULT_WAIT_MS,
     timeout: int = DEFAULT_TIMEOUT,
+    *,
+    base_dir: str | os.PathLike | None = None,
 ) -> str:
     """截图保存到工作目录，返回 JSON（含路径与大小）。"""
     browser = find_browser()
@@ -160,7 +163,7 @@ def browser_screenshot(
 
     target_file = Path(path).expanduser()
     if not target_file.is_absolute():
-        target_file = Path.cwd() / target_file
+        target_file = (Path(base_dir) if base_dir else Path.cwd()) / target_file
     target_file.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     try:
@@ -168,7 +171,7 @@ def browser_screenshot(
             f"--virtual-time-budget={int(wait_ms)}",
             f"--window-size={int(width)},{int(height)}",
             f"--screenshot={target_file}",
-            _resolve_target(url),
+            _resolve_target(url, base_dir),
         ], timeout)
     except subprocess.TimeoutExpired:
         return json.dumps({"ok": False, "error": f"截图超过 {timeout}s"}, ensure_ascii=False)
@@ -186,19 +189,19 @@ def browser_screenshot(
 BROWSER_TOOLS = None            # 占位：由 tools.build_tools 按需构造
 
 
-def make_browser_tools() -> list[Any]:
+def make_browser_tools(workspace: str | os.PathLike | None = None) -> list[Any]:
     """构造浏览器工具对象（只在检测到浏览器时调用）。"""
     from langchain_core.tools import tool
 
     @tool("browser_dom", description="用本机 headless 浏览器打开页面，返回渲染后的 DOM 与控制台报错（JSON）。")
     def _dom(url: str, wait_ms: int = DEFAULT_WAIT_MS) -> str:
-        return browser_dom(url, wait_ms)
+        return browser_dom(url, wait_ms, base_dir=workspace)
 
     @tool("browser_screenshot", description="用本机 headless 浏览器截图并保存到工作目录，返回文件路径。")
     def _shot(url: str, path: str = "browser-shot.png",
               width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT,
               wait_ms: int = DEFAULT_WAIT_MS) -> str:
-        return browser_screenshot(url, path, width, height, wait_ms)
+        return browser_screenshot(url, path, width, height, wait_ms, base_dir=workspace)
 
     return [_dom, _shot]
 
