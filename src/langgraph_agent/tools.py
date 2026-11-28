@@ -80,6 +80,33 @@ BING_SEARCH_URL = "https://www.bing.com/search"
 _SEARCH_HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"}
 
 
+def _bigrams(text: str) -> set[str]:
+    """取中文二元组，用来衡量结果与查询的相关度。"""
+    grams: set[str] = set()
+    for run in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+        for i in range(len(run) - 1):
+            grams.add(run[i:i + 2])
+    return grams
+
+
+def _relevance(query: str, text: str) -> int:
+    """查询与结果的贴合度，用来丢掉明显无关的结果。
+
+    查询里有空格时按"关键词命中数"算——"杭州 上海 长途大巴 票价"命中 4 个
+    才算强相关，而"西安咸阳国际机场"命中 0 个直接被扔掉；没有空格的中文
+    长句退回二元组交集，英文按词命中。
+    """
+    words = [w for w in re.split(r"[\s,，、/|+]+", query) if w]
+    low = text.lower()
+    if len(words) >= 2:
+        hits = sum(1 for w in words if w.lower() in low)
+        return hits if hits < len(words) else hits + 1     # 全部命中再加一分
+    want = _bigrams(query)
+    if want:
+        return len(want & _bigrams(text))
+    return sum(1 for word in re.findall(r"[A-Za-z]{3,}", query) if word.lower() in low)
+
+
 def _resolve_redirect(href: str) -> str:
     """搜狗/百度的结果链接多是跳转地址，尽量换成真实 URL（失败就原样返回）。"""
     if not href or not any(token in href for token in ("sogou.com/link", "baidu.com/link")):
@@ -174,19 +201,44 @@ def _search_bing(query: str, limit: int) -> list[dict[str, str]]:
     "查询用 2~4 个关键词，不要写成整句；可以加 site:域名 限定站点。",
 )
 def search_web(query: str, limit: int = 5) -> str:
-    """依次尝试搜狗、Bing，返回第一个有结果的引擎的回执（JSON 数组）。"""
+    """三路检索（搜狗 / 维基百科 / Bing），按贴合度合并去重后返回 JSON 数组。
+
+    为什么合并而不是"第一个成功就用"：实测搜狗会返回"DeepSeek 官网"这类
+    非空但完全无关的结果。一旦把第一条通道当权威，后面更可靠的通道就永远
+    没机会出场。合并 + 按相关度排序，模型看到的是"最像的几条"。
+    """
     wanted = max(1, int(limit))
     problems: list[str] = []
-    for engine in (_search_sogou, _search_wikipedia, _search_bing):
+    scored: list[tuple[int, int, dict[str, str]]] = []
+    seen: set[str] = set()
+
+    for rank, engine in enumerate((_search_sogou, _search_wikipedia, _search_bing)):
         try:
             items = engine(query, wanted)
         except Exception as exc:                   # noqa: BLE001 - 换下一个引擎
             problems.append(f"{engine.__name__}={type(exc).__name__}")
             continue
-        if items:
-            return json.dumps(items, ensure_ascii=False)
-        problems.append(f"{engine.__name__}=空")
-    return f"[检索失败: {'; '.join(problems)}]"
+        if not items:
+            problems.append(f"{engine.__name__}=空")
+        for item in items:
+            url = item.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            text = f"{item.get('title', '')} {item.get('snippet', '')}"
+            scored.append((_relevance(query, text), rank, item))
+
+    if not scored:
+        return f"[检索失败: {'; '.join(problems)}]"
+
+    # 相关度优先，同分时保持通道权重（搜狗 > 维基 > Bing）
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    strong = [item for score, _rank, item in scored if score >= 2]
+    weak = [item for score, _rank, item in scored if score == 1]
+    picked = (strong + weak)[:wanted]
+    if not picked:                                 # 全都不贴合：退回原始顺序
+        picked = [item for _score, _rank, item in scored[:wanted]]
+    return json.dumps(picked, ensure_ascii=False)
 
 
 @tool("read_webpage", description="读取公开网页正文，返回纯文本。")
