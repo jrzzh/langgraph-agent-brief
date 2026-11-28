@@ -33,7 +33,19 @@ TEXT_SUFFIXES = frozenset(
     {".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".csv", ".log",
      ".py", ".js", ".ts", ".html", ".htm", ".xml", ".toml", ".ini", ".rst"}
 )
-WRITE_SUFFIXES = frozenset({".txt", ".md", ".markdown", ".json", ".csv", ".log", ".py"})
+#: 允许写入的后缀。**沙箱靠路径（workspace）而不是后缀**，所以这里放宽到常见
+#: 源码与配置文件——早期只放开少数几种，结果模型写 index.html 被拒，
+#: 只好改成 .txt 暂存再写脚本改名，白白多花一倍步骤。
+#: 空后缀表示允许 ``Makefile`` / ``Dockerfile`` 这类无扩展名文件。
+WRITE_SUFFIXES = frozenset({
+    ".txt", ".md", ".markdown", ".rst", ".json", ".jsonc", ".csv", ".tsv", ".log",
+    ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
+    ".html", ".htm", ".css", ".scss", ".less", ".svg", ".xml",
+    ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".m", ".mm", ".rs", ".go",
+    ".java", ".kt", ".cs", ".php", ".rb", ".sh", ".bat", ".cmd", ".ps1",
+    ".toml", ".ini", ".cfg", ".conf", ".yaml", ".yml", ".env", ".cmake", ".mk",
+    ".sql", ".gradle", ".gitignore", ".editorconfig", "",
+})
 
 
 def _strip_xml_decl(text: str) -> str:

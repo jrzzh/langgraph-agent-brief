@@ -199,6 +199,28 @@ def check_sandbox() -> str:
     return ""
 
 
+@step("可写后缀覆盖常见源码（网页游戏 / C++ 迁移的前提）")
+def check_write_suffixes() -> str:
+    sys.path.insert(0, str(SRC))
+    from langgraph_agent import tool_specs
+    from langgraph_agent.tools import build_tools
+
+    ws = REPO / "workspace"
+    tools = {t.name: t for t in build_tools(tool_specs.TOOL_NAMES, workspace=ws)}
+    tried = ("_suffix/index.html", "_suffix/css/style.css", "_suffix/js/main.js",
+             "_suffix/src/main.cpp", "_suffix/Makefile")
+    for rel in tried:
+        out = tools["write_file"].invoke({"path": rel, "content": "x"})
+        assert out.startswith("[已写入"), (rel, out)
+    # 可执行文件仍然拒绝：写 .exe 没有正当理由
+    blocked = tools["write_file"].invoke({"path": "_suffix/a.exe", "content": "x"})
+    assert blocked.startswith("[写入失败"), blocked
+
+    import shutil
+    shutil.rmtree(ws / "_suffix", ignore_errors=True)
+    return f"{len(tried)} 种后缀"
+
+
 @step("计算器沙箱：只算数，不执行代码")
 def check_calculator() -> str:
     sys.path.insert(0, str(SRC))
@@ -338,6 +360,7 @@ def main() -> int:
     check_workspace_gate()
     check_sandbox()
     check_calculator()
+    check_write_suffixes()
     check_shell_tiers()
     check_shell_env()
     check_execute()
