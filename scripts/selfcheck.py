@@ -221,6 +221,30 @@ def check_write_suffixes() -> str:
     return f"{len(tried)} 种后缀"
 
 
+@step("检索与抓取：失败也要给出可读原因，不抛异常")
+def check_net_tools() -> str:
+    sys.path.insert(0, str(SRC))
+    import json
+
+    from langgraph_agent.tools import read_webpage, search_web
+
+    # 网络可能被墙：两种情况都必须返回字符串，而不是抛异常出来
+    raw = search_web.invoke({"query": "沪杭客运专线", "limit": 3})
+    assert isinstance(raw, str) and raw, "search_web 返回空"
+    if raw.startswith("[检索失败"):      # 注意：正常结果也是 JSON 数组，不能只看 "["
+        assert "检索失败" in raw, raw[:120]
+        search_note = "检索被拦（已给出原因）"
+    else:
+        items = json.loads(raw)
+        assert items and {"title", "url"} <= set(items[0]), items[:1]
+        search_note = f"{len(items)} 条"
+
+    page = read_webpage.invoke({"url": "https://zh.wikipedia.org/wiki/沪杭客运专线"})
+    assert isinstance(page, str) and page
+    page_note = "维基可读" if not page.startswith("[读取失败") else "维基被拦（已给出原因）"
+    return f"{search_note} / {page_note}"
+
+
 @step("计算器沙箱：只算数，不执行代码")
 def check_calculator() -> str:
     sys.path.insert(0, str(SRC))
@@ -396,6 +420,7 @@ def main() -> int:
     check_sandbox()
     check_calculator()
     check_write_suffixes()
+    check_net_tools()
     check_shell_tiers()
     check_shell_env()
     check_execute()

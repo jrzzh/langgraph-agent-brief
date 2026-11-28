@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -24,6 +25,11 @@ from lxml import html
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+#: 合规的机器人 UA（带联系方式）。部分站点（维基百科）专门拒绝伪装成浏览器的
+#: 脚本，却接受这种自报家门的标识——read_webpage 被 403/429 时会换它重试。
+POLITE_AGENT = (
+    "langgraph-agent-brief/0.1 (research agent; +https://github.com/jrzzh/langgraph-agent-brief)"
 )
 HTTP_TIMEOUT = float(os.environ.get("LANGGRAPH_AGENT_HTTP_TIMEOUT", "15"))
 MAX_TEXT_CHARS = 8000
@@ -65,51 +71,156 @@ def _squash(text: str) -> str:
 # ---------------------------------------------------------------------------
 # 三个基线工具
 # ---------------------------------------------------------------------------
-@tool("search_web", description="搜索公开网页并返回候选来源（标题、链接、摘要）。")
-def search_web(query: str, limit: int = 5) -> str:
-    """用 Bing 的公开结果页做检索，返回 JSON 数组。"""
+#: 中文检索优先用搜狗。实测 Bing 对中文多关键词查询会返回"杭州旅游攻略"
+#: 这类完全无关的结果（连英文长查询也会退化成杭州本地卡），
+#: 而搜狗的结果页结构稳定、链接多为直达地址。
+SOGOU_SEARCH_URL = "https://www.sogou.com/web"
+BING_SEARCH_URL = "https://www.bing.com/search"
+
+_SEARCH_HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"}
+
+
+def _resolve_redirect(href: str) -> str:
+    """搜狗/百度的结果链接多是跳转地址，尽量换成真实 URL（失败就原样返回）。"""
+    if not href or not any(token in href for token in ("sogou.com/link", "baidu.com/link")):
+        return href
     try:
-        resp = requests.get(
-            "https://www.bing.com/search",
-            params={"q": query, "setlang": "zh-Hans"},
-            headers={"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"},
-            timeout=HTTP_TIMEOUT,
-        )
-        resp.raise_for_status()
-        doc = html.fromstring(_strip_xml_decl(resp.text))
-    except Exception as exc:                       # noqa: BLE001
-        return f"[检索失败: {type(exc).__name__}: {exc}]"
+        resp = requests.get(href, headers=_SEARCH_HEADERS,
+                            timeout=min(HTTP_TIMEOUT, 8), allow_redirects=True)
+        return resp.url or href
+    except Exception:                              # noqa: BLE001 - 解析失败不影响可用性
+        return href
+
+
+def _search_sogou(query: str, limit: int) -> list[dict[str, str]]:
+    resp = requests.get(SOGOU_SEARCH_URL, params={"query": query},
+                        headers=_SEARCH_HEADERS, timeout=HTTP_TIMEOUT)
+    resp.raise_for_status()
+    doc = html.fromstring(_strip_xml_decl(resp.text))
+
+    out: list[dict[str, str]] = []
+    for heading in doc.xpath("//h3"):
+        link = heading.xpath(".//a")
+        if not link:
+            continue
+        href = link[0].get("href") or ""
+        if not href.startswith("http"):
+            continue
+        title = _squash(link[0].text_content())
+        parent = heading.getparent()
+        snippet = _squash(" ".join(parent.xpath(".//text()"))) if parent is not None else ""
+        snippet = snippet.replace(title, "").strip()[:300]
+        out.append({"title": title, "url": _resolve_redirect(href), "snippet": snippet})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _search_wikipedia(query: str, limit: int) -> list[dict[str, str]]:
+    """维基百科搜索 API：不受反爬影响，返回的链接可以直接用 read_webpage 打开。
+
+    对"线路/车站/里程/历史票价"这类背景事实特别有用——搜索引擎被拦时，
+    这是少数还能拿到**可引用且可核验**内容的通道。
+    """
+    resp = requests.get(
+        "https://zh.wikipedia.org/w/api.php",
+        params={
+            "action": "query", "list": "search", "srsearch": query,
+            "format": "json", "srlimit": max(1, int(limit)), "utf8": 1,
+        },
+        headers={"User-Agent": POLITE_AGENT},
+        timeout=HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    hits = (resp.json().get("query") or {}).get("search") or []
+    out: list[dict[str, str]] = []
+    for hit in hits:
+        title = str(hit.get("title") or "").strip()
+        if not title:
+            continue
+        snippet = re.sub(r"<[^>]+>", "", str(hit.get("snippet") or ""))
+        out.append({
+            "title": f"{title}（维基百科）",
+            "url": "https://zh.wikipedia.org/wiki/" + requests.utils.quote(title),
+            "snippet": _squash(snippet)[:300],
+        })
+    return out
+
+
+def _search_bing(query: str, limit: int) -> list[dict[str, str]]:
+    resp = requests.get(BING_SEARCH_URL, params={"q": query, "setlang": "zh-Hans"},
+                        headers=_SEARCH_HEADERS, timeout=HTTP_TIMEOUT)
+    resp.raise_for_status()
+    doc = html.fromstring(_strip_xml_decl(resp.text))
 
     out: list[dict[str, str]] = []
     for item in doc.xpath("//li[contains(@class,'b_algo')]"):
         link = item.xpath(".//h2/a")
         if not link:
             continue
-        a = link[0]
         out.append({
-            "title": _squash(a.text_content()),
-            "url": a.get("href", ""),
+            "title": _squash(link[0].text_content()),
+            "url": link[0].get("href", ""),
             "snippet": _squash(" ".join(p.text_content() for p in item.xpath(".//p")))[:300],
         })
-        if len(out) >= max(1, int(limit)):
+        if len(out) >= limit:
             break
-    if not out:
-        return "[检索失败: 没有解析到结果，可能是页面结构变化或被拦截]"
-    return json.dumps(out, ensure_ascii=False)
+    return out
+
+
+@tool(
+    "search_web",
+    description="搜索公开网页并返回候选来源（标题、链接、摘要）。"
+    "查询用 2~4 个关键词，不要写成整句；可以加 site:域名 限定站点。",
+)
+def search_web(query: str, limit: int = 5) -> str:
+    """依次尝试搜狗、Bing，返回第一个有结果的引擎的回执（JSON 数组）。"""
+    wanted = max(1, int(limit))
+    problems: list[str] = []
+    for engine in (_search_sogou, _search_wikipedia, _search_bing):
+        try:
+            items = engine(query, wanted)
+        except Exception as exc:                   # noqa: BLE001 - 换下一个引擎
+            problems.append(f"{engine.__name__}={type(exc).__name__}")
+            continue
+        if items:
+            return json.dumps(items, ensure_ascii=False)
+        problems.append(f"{engine.__name__}=空")
+    return f"[检索失败: {'; '.join(problems)}]"
 
 
 @tool("read_webpage", description="读取公开网页正文，返回纯文本。")
 def read_webpage(url: str) -> str:
-    """取正文文本；脚本、样式、导航一律丢掉。"""
-    try:
-        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
-        resp.raise_for_status()
-        doc = html.fromstring(_strip_xml_decl(resp.text))
-    except Exception as exc:                       # noqa: BLE001
-        return f"[读取失败: {type(exc).__name__}: {exc}]"
+    """取正文文本；脚本、样式、导航一律丢掉。
+
+    先伪装成浏览器 UA；被 403/429 拦下时换用"会报家门的"UA 再试一次——
+    维基百科这类站点专门拒绝伪装成浏览器的脚本，却接受合规的机器人标识。
+    """
+    doc = None
+    failure = ""
+    for headers in (
+        {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"},
+        {"User-Agent": POLITE_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"},
+    ):
+        try:
+            resp = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
+            resp.raise_for_status()
+            doc = html.fromstring(_strip_xml_decl(resp.text))
+            break
+        except Exception as exc:                   # noqa: BLE001 - 换个 UA 再试
+            failure = f"{type(exc).__name__}: {exc}"
+    if doc is None:
+        return f"[读取失败: {failure}]"
 
     for bad in doc.xpath("//script|//style|//nav|//footer|//header|//aside"):
         bad.getparent().remove(bad)
+
+    # 维基百科正文在 #mw-content-text 里，直接取它，避免整页导航噪声
+    if "wikipedia.org" in url:
+        body = doc.xpath("//div[@id='mw-content-text']")
+        if body:
+            doc = body[0]
+
     text = _squash(doc.text_content())
     return text[:MAX_TEXT_CHARS] if text else "[读取失败: 正文为空]"
 
