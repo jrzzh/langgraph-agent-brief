@@ -47,6 +47,16 @@ TOOL_SPECS: tuple[BuiltinToolSpec, ...] = (
         requires_read_paths=True,
     ),
     BuiltinToolSpec(
+        "browser_dom",
+        "用本机 headless 浏览器打开页面，返回渲染后的 DOM 与控制台报错（JSON）。",
+        requires_workspace=True,
+    ),
+    BuiltinToolSpec(
+        "browser_screenshot",
+        "用本机 headless 浏览器截图并保存到工作目录，返回文件路径。",
+        requires_workspace=True,
+    ),
+    BuiltinToolSpec(
         "shell",
         "在工作空间内执行一条只读命令（白名单：where/which、python --version、"
         "pip list、git status 等），返回退出码与输出。非版本查询需用户确认。",

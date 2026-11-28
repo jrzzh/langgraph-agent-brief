@@ -230,6 +230,16 @@ def build_tools(
             continue
         picked.append(item)
 
+    # 浏览器：只有本机存在 Chrome/Edge 时才注入，否则该工具只会返回错误
+    wanted_browser = {"browser_dom", "browser_screenshot"}
+    if root is not None and (wanted is None or wanted & wanted_browser):
+        from .browser import browser_available, make_browser_tools
+
+        if browser_available():
+            for item in make_browser_tools():
+                if wanted is None or item.name in wanted:
+                    picked.append(item)
+
     # shell 单独处理：没有 workspace 就不给（cwd 必须锁在沙箱内）
     if (wanted is None or "shell" in wanted) and root is not None:
         from .shell import make_shell_tool

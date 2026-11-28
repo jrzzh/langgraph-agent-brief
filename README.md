@@ -106,6 +106,8 @@ agent = create_deep_agent(model=llm, tools=TOOLS,
 | `tool_specs.py` | 内置工具的**纯数据**目录（名字 + 描述），列目录时毫秒级返回，不加载实现 |
 | `tools.py` | 内置工具的**自包含**实现：Bing 检索 / 网页正文 / 计算器 / 文件读写，不依赖 MCP |
 | `shell.py` | 只读 shell 工具（**默认关闭**）：白名单 + 三级审批 + 超时截断，子进程不继承任何密钥 |
+| `sandbox.py` | 本地命令执行后端：让 deepagents 的 `execute` 真正可用（黑名单 + 密钥剔除 + 超时） |
+| `browser.py` | 浏览器验证：调本机 Chrome/Edge headless 取 DOM、控制台报错与截图 |
 | `context_compression.py` | 对话历史压缩：超窗口 75% 时折成「摘要 + 最近 6 轮」，增量维护 |
 
 **测试案例 `example/`**

@@ -72,16 +72,17 @@ def check_lazy_import() -> str:
     return ""
 
 
-@step("工具目录 = 7 项且为纯数据")
+@step("工具目录 = 9 项且为纯数据")
 def check_catalog() -> str:
     sys.path.insert(0, str(SRC))
     from langgraph_agent import tool_specs
 
     items = tool_specs.catalog()
-    assert len(items) == 7, f"期望 7 项，实际 {len(items)}"
+    assert len(items) == 9, f"期望 9 项，实际 {len(items)}"
     names = [name for name, _, _ in items]
     for expected in ("search_web", "read_webpage", "calculator",
-                     "read_file", "write_file", "list_directory", "shell"):
+                     "read_file", "write_file", "list_directory", "shell",
+                     "browser_dom", "browser_screenshot"):
         assert expected in names, f"目录里缺少 {expected}"
     # shell 必须默认关闭：它是唯一能触碰真实进程的工具
     default_on = {name: enabled for name, _, enabled in items}
@@ -212,6 +213,50 @@ def check_calculator() -> str:
 # ---------------------------------------------------------------------------
 # 3. 案例层：两个实现都能构造
 # ---------------------------------------------------------------------------
+@step("命令执行后端可用（execute 不再是死工具）")
+def check_execute() -> str:
+    sys.path.insert(0, str(SRC))
+    from langgraph_agent.sandbox import LocalShellBackend
+    from deepagents.middleware.filesystem import supports_execution
+
+    backend = LocalShellBackend(root_dir=REPO / "workspace", virtual_mode=True)
+    assert supports_execution(backend), "deepagents 仍认为这个后端不能执行命令"
+
+    ok = backend.execute("echo probe-ok")
+    assert ok.exit_code == 0 and "probe-ok" in ok.output, ok
+    return f"echo → exit={ok.exit_code}"
+
+
+@step("命令执行的破坏性黑名单与密钥隔离")
+def check_execute_guard() -> str:
+    sys.path.insert(0, str(SRC))
+    from langgraph_agent.sandbox import LocalShellBackend, scrub_env
+
+    backend = LocalShellBackend(root_dir=REPO / "workspace", virtual_mode=True)
+    for bad in ("rm -rf /", "del /f /s /q C:\\", "format C:"):
+        result = backend.execute(bad)
+        assert result.exit_code is None and "拒绝" in result.output, (bad, result)
+
+    env = scrub_env({"PATH": "x", "DEEPSEEK_API_KEY": "sk-1", "MY_TOKEN": "t", "HOME": "h"})
+    assert "DEEPSEEK_API_KEY" not in env and "MY_TOKEN" not in env, env
+    assert env.get("PATH") == "x", "非密钥变量不该被删掉"
+    return ""
+
+
+@step("浏览器工具已注册（本机有 Chrome/Edge 时）")
+def check_browser_tools() -> str:
+    sys.path.insert(0, str(SRC))
+    from langgraph_agent import browser
+    from langgraph_agent.tools import build_tools
+
+    if not browser.browser_available():
+        return "跳过：本机没有 Chrome/Edge"
+    names = {t.name for t in build_tools(workspace=REPO / "workspace")}
+    for expected in ("browser_dom", "browser_screenshot"):
+        assert expected in names, f"缺工具 {expected}"
+    return browser.find_browser() or ""
+
+
 @step("案例层可导入（agent_brief / agent_deepagents）")
 def check_example_imports() -> str:
     sys.path.insert(0, str(EXAMPLE))
@@ -295,6 +340,9 @@ def main() -> int:
     check_calculator()
     check_shell_tiers()
     check_shell_env()
+    check_execute()
+    check_execute_guard()
+    check_browser_tools()
     check_example_imports()
     check_mcp_configure()
     if args.net or args.all:

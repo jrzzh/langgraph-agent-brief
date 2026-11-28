@@ -20,6 +20,7 @@ from typing import Any, Iterable, Sequence
 from deepagents import create_deep_agent
 from deepagents.backends.composite import CompositeBackend
 from deepagents.backends.filesystem import FilesystemBackend
+from .sandbox import LocalShellBackend
 from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger("langgraph_agent")
@@ -105,7 +106,10 @@ def build_agent(
     tools: Sequence[Any] | Iterable[Any] = (),
     skills_dir: str | os.PathLike | None = None,
     workspace: str | os.PathLike | None = None,
+    exec_policy=None,
+    exec_timeout: int | None = None,
     system_prompt: str | None = None,
+    enable_execute: bool = True,
     recursion_limit: int | None = None,
 ):
     """构造一个可直接 ``.stream()`` 的 ReAct 图。
@@ -127,7 +131,19 @@ def build_agent(
     """
     root = Path(workspace).expanduser().resolve() if workspace else Path.cwd()
     root.mkdir(parents=True, exist_ok=True)
-    workspace_backend = FilesystemBackend(root_dir=str(root), virtual_mode=True)
+
+    # 用带执行能力的后端：deepagents 的 execute 工具只有在 backend 实现
+    # SandboxBackendProtocol 时才真正可用，纯 FilesystemBackend 会每次都返回
+    # "Execution not available"。enable_execute=False 可退回纯文件模式。
+    if enable_execute:
+        workspace_backend: Any = LocalShellBackend(
+            root_dir=str(root),
+            virtual_mode=True,
+            policy=exec_policy,
+            timeout=exec_timeout,
+        )
+    else:
+        workspace_backend = FilesystemBackend(root_dir=str(root), virtual_mode=True)
 
     route: dict[str, Any] = {}
     if skills_dir is not None:
