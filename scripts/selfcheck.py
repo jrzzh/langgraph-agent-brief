@@ -249,6 +249,41 @@ def check_execute() -> str:
     return f"echo → exit={ok.exit_code}"
 
 
+@step("常驻进程不挂死（start /B + 超时 + 取消）")
+def check_exec_no_hang() -> str:
+    import threading
+    import time
+
+    sys.path.insert(0, str(SRC))
+    from langgraph_agent.sandbox import LocalShellBackend
+
+    backend = LocalShellBackend(root_dir=REPO / "workspace", virtual_mode=True)
+
+    # ① 后台服务 + 立即返回：曾经因为管道被服务继承而永久挂起
+    started = time.perf_counter()
+    backend.execute("start /B python -m http.server 8231", timeout=15)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 15, f"后台服务把调用挂住了 {elapsed:.1f}s"
+
+    # ② 前台常驻命令：超时必须返回并清理
+    started = time.perf_counter()
+    out = backend.execute("python -m http.server 8232", timeout=2)
+    elapsed = time.perf_counter() - started
+    assert "[超时]" in out.output and elapsed < 12, (elapsed, out.output[-60:])
+
+    # ③ 取消回调能在命令中途打断
+    stop = {"on": False}
+    cancellable = LocalShellBackend(
+        root_dir=REPO / "workspace", virtual_mode=True, cancel_check=lambda: stop["on"]
+    )
+    threading.Timer(1.0, lambda: stop.update(on=True)).start()
+    started = time.perf_counter()
+    out = cancellable.execute("python -m http.server 8233", timeout=60)
+    elapsed = time.perf_counter() - started
+    assert "[已取消]" in out.output and elapsed < 20, (elapsed, out.output[-60:])
+    return f"后台 {elapsed:.1f}s 内返回"
+
+
 @step("命令执行的破坏性黑名单与密钥隔离")
 def check_execute_guard() -> str:
     sys.path.insert(0, str(SRC))
@@ -366,6 +401,7 @@ def main() -> int:
     check_execute()
     check_execute_guard()
     check_browser_tools()
+    check_exec_no_hang()
     check_example_imports()
     check_mcp_configure()
     if args.net or args.all:

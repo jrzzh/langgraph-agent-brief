@@ -108,6 +108,7 @@ def build_agent(
     workspace: str | os.PathLike | None = None,
     exec_policy=None,
     exec_timeout: int | None = None,
+    exec_cancel_check=None,
     system_prompt: str | None = None,
     enable_execute: bool = True,
     recursion_limit: int | None = None,
@@ -141,6 +142,7 @@ def build_agent(
             virtual_mode=True,
             policy=exec_policy,
             timeout=exec_timeout,
+            cancel_check=exec_cancel_check,
         )
     else:
         workspace_backend = FilesystemBackend(root_dir=str(root), virtual_mode=True)

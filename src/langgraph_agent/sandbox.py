@@ -23,6 +23,7 @@ import asyncio
 import os
 import re
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable
@@ -54,6 +55,24 @@ _DENY_RE = re.compile("|".join(_DENY_PATTERNS), re.IGNORECASE)
 
 #: 名字里出现这些片段的环境变量不传子进程（密钥别名覆盖常见写法）
 _SECRET_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL")
+
+
+def _kill_tree(pid: int) -> None:
+    """连子孙一起杀。
+
+    Windows 上 ``start /B`` 起的服务是 cmd.exe 的子进程，只杀父进程会留下孤儿；
+    ``taskkill /T`` 按进程树清理。POSIX 上对进程组发 SIGKILL。
+    """
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           capture_output=True, timeout=10)
+        else:
+            import signal
+
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except Exception:                              # noqa: BLE001 - 清理失败不该影响返回值
+        pass
 
 
 class CommandDenied(RuntimeError):
@@ -115,12 +134,14 @@ class LocalShellBackend(FilesystemBackend):
         policy: Callable[[str], bool] | None = None,
         timeout: int | None = None,
         env: dict[str, str] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(root_dir=str(root_dir), virtual_mode=virtual_mode)
         self._root = Path(root_dir).expanduser().resolve()
         self._policy = policy
         self._timeout = max(1, min(int(timeout or self.default_timeout), MAX_EXEC_TIMEOUT))
         self._env = scrub_env(env)
+        self._cancel_check = cancel_check
 
     # -- 协议要求 ---------------------------------------------------------
     @property
@@ -146,34 +167,55 @@ class LocalShellBackend(FilesystemBackend):
         limit = max(1, min(int(timeout or self._timeout), MAX_EXEC_TIMEOUT))
         self._root.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
-        try:
-            proc = subprocess.run(
-                command,
-                cwd=str(self._root),
-                env=self._env,
-                shell=True,                 # 允许管道与串行命令；安全性由黑名单兜底
-                capture_output=True,
-                timeout=limit,
-            )
-        except subprocess.TimeoutExpired as exc:
-            out = _decode(exc.stdout or b"") + _decode(exc.stderr or b"")
-            return ExecuteResponse(
-                output=(out[:MAX_OUTPUT_CHARS] + f"\n[超时] 命令超过 {limit}s 被终止"),
-                exit_code=None,
-                truncated=len(out) > MAX_OUTPUT_CHARS,
-            )
-        except OSError as exc:
-            return ExecuteResponse(output=f"[执行失败] {type(exc).__name__}: {exc}",
-                                   exit_code=None, truncated=False)
 
-        out = (_decode(proc.stdout) + _decode(proc.stderr)).strip()
+        # 用临时文件而不是管道接输出：模型可能用 ``start /B`` 起一个常驻服务，
+        # 它会继承父进程的 stdout 句柄。用管道时 ``subprocess.run(timeout=)``
+        # 超时后只杀掉 cmd.exe，随后 ``communicate()`` 会等管道关闭——
+        # 而服务还活着，于是**永久挂起**（实测卡了 30 分钟）。
+        # 文件句柄没有这个问题：父进程退出即可读，服务继续跑也不影响。
+        with tempfile.TemporaryFile() as out_fh, tempfile.TemporaryFile() as err_fh:
+            try:
+                proc = subprocess.Popen(
+                    command,
+                    cwd=str(self._root),
+                    env=self._env,
+                    shell=True,             # 允许管道与串行命令；安全性由黑名单兜底
+                    stdout=out_fh,
+                    stderr=err_fh,
+                )
+            except OSError as exc:
+                return ExecuteResponse(output=f"[执行失败] {type(exc).__name__}: {exc}",
+                                       exit_code=None, truncated=False)
+
+            deadline = time.monotonic() + limit
+            exit_code: int | None = None
+            note = ""
+            while True:
+                try:
+                    exit_code = proc.wait(timeout=0.25)
+                    break
+                except subprocess.TimeoutExpired:
+                    if self._cancel_check is not None and self._cancel_check():
+                        _kill_tree(proc.pid)
+                        note = "\n[已取消] 用户中断，命令被终止"
+                        break
+                    if time.monotonic() >= deadline:
+                        _kill_tree(proc.pid)
+                        note = f"\n[超时] 命令超过 {limit}s 被终止"
+                        break
+
+            out_fh.seek(0)
+            err_fh.seek(0)
+            text = (_decode(out_fh.read()) + _decode(err_fh.read())).strip()
+
         elapsed = time.perf_counter() - started
-        if not out:
-            out = f"[无输出] 退出码 {proc.returncode}，耗时 {elapsed:.1f}s"
+        if not text:
+            text = f"[无输出] 退出码 {exit_code}，耗时 {elapsed:.1f}s"
+        text = text + note
         return ExecuteResponse(
-            output=out[:MAX_OUTPUT_CHARS],
-            exit_code=proc.returncode,
-            truncated=len(out) > MAX_OUTPUT_CHARS,
+            output=text[:MAX_OUTPUT_CHARS],
+            exit_code=None if note else exit_code,
+            truncated=len(text) > MAX_OUTPUT_CHARS,
         )
 
     async def aexecute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
